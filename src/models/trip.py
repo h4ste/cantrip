@@ -1,0 +1,2 @@
+class TRIPModel:
+    pass
