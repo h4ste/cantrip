@@ -28,6 +28,7 @@ def dense_to_sparse(tensor):
 
 
 def rnn_layer(cell_fn, num_hidden, inputs, lengths, return_input_weights=False):
+    # Check if we were given a list of hidden units
     stacked = isinstance(num_hidden, list)
 
     # Define type of RNN/memory cell
@@ -37,46 +38,27 @@ def rnn_layer(cell_fn, num_hidden, inputs, lengths, return_input_weights=False):
         cell = cell_fn(num_hidden)
 
     # Initialize memory-state as zero
-
-    # if isinstance(inputs, tf.SparseTensor):
-    #     print('Getting sparse batch size for', inputs)
-    #     print('Input Shape:', inputs.get_shape())
-    #     batch_size = inputs.get_shape()[0]
-    # else:
-    #     batch_size = inputs.shape[0]
-
     state = cell.zero_state([inputs.shape[0]], tf.float32)
-
-    print('RNN Cell:', cell)
-    print('RNN Initial State:', state)
 
     # Run dynamic RNN; discard all outputs except final state
     output, state = tf.nn.dynamic_rnn(cell=cell, inputs=inputs, sequence_length=lengths, initial_state=state,
                                       swap_memory=True)
 
-    print('RNN Final State:', state)
-    print('RNN Final State Type:', type(state))
-
-    print('RNN Output:', output)
-
+    # If we have stacked memory cells pop the state off the top of the stack
     if stacked:
         state = state[-1]
-
-    print('RNN Final State Last State:', state)
-    print('RNN Final State Last State Type:', type(state))
-
-    # The final state of a dynamic RNN, in TensorFlow, is either
-    # (1) a tuple containing the final output and final memory state, or
-    # (2) the final output
 
     if not isinstance(state, RANStateTuple) and return_input_weights:
         return ValueError('can only return input weights from RANv2 cells')
 
+    # The final state of a dynamic RNN, in TensorFlow, is either
+    # (1) an LSTMStateTuple containing the final output and final memory state,
+    # (2) a special RANStateTuple we created n src.models.ran
+    # (3) just the final state output
     if isinstance(state, LSTMStateTuple):
         return state.h
     elif isinstance(state, RANStateTuple):
         if return_input_weights:
-            print('Weights:', state.w)
             return state.h, state.w
         else:
             return state.h

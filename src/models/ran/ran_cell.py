@@ -1,66 +1,17 @@
 import collections
-from typing import Iterable, Tuple, Any, Iterator
 
 import tensorflow as tf
-from tensorflow.python.ops.rnn_cell_impl import RNNCell, LSTMStateTuple
-
 from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import nn_ops
-from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import variable_scope as vs
-
+from tensorflow.python.ops.rnn_cell_impl import RNNCell
 from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.util import nest
 
 _BIAS_VARIABLE_NAME = "bias"
 _WEIGHTS_VARIABLE_NAME = "kernel"
-
-
-# def _checked_scope(cell, scope, reuse=None, **kwargs):
-#     if reuse is not None:
-#         kwargs["reuse"] = reuse
-#     with vs.variable_scope(scope, **kwargs) as checking_scope:
-#         scope_name = checking_scope.name
-#         if hasattr(cell, "_scope"):
-#             cell_scope = cell._scope  # pylint: disable=protected-access
-#             if cell_scope.name != checking_scope.name:
-#                 raise ValueError(
-#                     "Attempt to reuse RNNCell %s with a different variable scope than "
-#                     "its first use.  First use of cell was with scope '%s', this "
-#                     "attempt is with scope '%s'.  Please create a new instance of the "
-#                     "cell if you would like it to use a different set of weights.  "
-#                     "If before you were using: MultiRNNCell([%s(...)] * num_layers), "
-#                     "change to: MultiRNNCell([%s(...) for _ in range(num_layers)]).  "
-#                     "If before you were using the same cell instance as both the "
-#                     "forward and reverse cell of a bidirectional RNN, simply create "
-#                     "two instances (one for forward, one for reverse).  "
-#                     "In May 2017, we will start transitioning this cell's behavior "
-#                     "to use existing stored weights, if any, when it is called "
-#                     "with scope=None (which can lead to silent model degradation, so "
-#                     "this error will remain until then.)"
-#                     % (cell, cell_scope.name, scope_name, type(cell).__name__,
-#                        type(cell).__name__))
-#         else:
-#             weights_found = False
-#             try:
-#                 with vs.variable_scope(checking_scope, reuse=True):
-#                     vs.get_variable(_WEIGHTS_VARIABLE_NAME)
-#                 weights_found = True
-#             except ValueError:
-#                 pass
-#             if weights_found and reuse is None:
-#                 raise ValueError(
-#                     "Attempt to have a second RNNCell use the weights of a variable "
-#                     "scope that already has weights: '%s'; and the cell was not "
-#                     "constructed as %s(..., reuse=True).  "
-#                     "To share the weights of an RNNCell, simply "
-#                     "reuse it in your second calculation, or create a new one with "
-#                     "the argument reuse=True." % (scope_name, type(cell).__name__))
-#
-#         # Everything is OK.  Update the cell's scope and yield it.
-#         cell._scope = checking_scope  # pylint: disable=protected-access
-#         return checking_scope
 
 
 def _linear(args,
@@ -154,37 +105,6 @@ class RANStateTuple(_RANStateTuple):
             raise TypeError("Inconsistent internal state: %s vs %s" %
                             (str(c.dtype), str(h.dtype)))
         return c.dtype
-
-
-# class Test(collections.namedtuple('a', 'b', 'c')):
-#
-#     def __iter__(self) -> Iterator[_T_co]:
-#         return super().__iter__()
-
-
-# class RANStateTuple(object):
-#
-#     __slots__ = ['h', 'c', 'w']
-#
-#     def __init__(self, h, c, w=None) -> None:
-#         self.h = h,
-#         self.c = c
-#         self.w = w
-#
-#     def __iter__(self):
-#         t = (self.h, self.c)
-#         return t.__iter__()
-#
-#     @property
-#     def dtype(self):
-#         (c, h) = self
-#         if c.dtype != h.dtype:
-#             raise TypeError("Inconsistent internal state: %s vs %s" %
-#                             (str(c.dtype), str(h.dtype)))
-#         return c.dtype
-
-
-
 
 
 # noinspection PyAbstractClass,PyMissingConstructor
