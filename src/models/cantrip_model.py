@@ -3,22 +3,14 @@ import tensorflow as tf
 from tensorflow.contrib.rnn import LayerNormBasicLSTMCell, LSTMStateTuple
 from tensorflow.nn.rnn_cell import BasicLSTMCell, GRUCell, MultiRNNCell
 
-from src.models.ran.ran_cell import RANCell, RANCellv2
+from src.models.ran.ran_cell import RANCell, RANCellv2, RANCellv3
+from src.models.rnn_cells import LayerNormGRUCell
 from src.models.trip import TRIPModel
 from src.models.doc.doc_encoder import rnn_encoder
 from src.models.layers import rnn_layer, dense_to_sparse
 from src.data.scribe_data import  _DELTA_BUCKETS
 
-_cell_types = {
-    'RAN': RANCell,
-    'RANv2': RANCellv2,
-    'LSTM': BasicLSTMCell,
-    'LSTM-LN': LayerNormBasicLSTMCell,
-    'GRU': GRUCell,
-    'RAN-LN': lambda num_cells: RANCell(num_cells, normalize=True),
-    'RANv2-LN': lambda num_cells: RANCellv2(num_cells, normalize=True)
-}
-
+CELL_TYPES = ['LRAN', 'RAN', 'RANv2', 'LSTM', 'LSTM-LN', 'GRU', 'GRU-LN', 'RAN-LN', 'RANv2-LN']
 
 def CANTRIP(**params):
     model = CANTRIPModel(**params)
@@ -44,8 +36,9 @@ class CANTRIPModel(TRIPModel):
                  cell_type,
                  batch_size,
                  doc_embedding=rnn_encoder(1),
+                 dropout=0,
                  num_classes=2,
-                 delta_buckets=len(_DELTA_BUCKETS)):
+                 delta_encoding_size=len(_DELTA_BUCKETS)):
         self.max_seq_len = max_seq_len
         self.max_doc_len = max_doc_len
         self.vocabulary_size = vocabulary_size
@@ -53,7 +46,24 @@ class CANTRIPModel(TRIPModel):
         self.num_hidden = num_hidden
         self.batch_size = batch_size
         self.num_classes = num_classes
-        self.delta_buckets = delta_buckets
+        self.delta_encoding_size = delta_encoding_size
+        self.dropout = dropout
+        self.cell_type = cell_type
+
+
+
+        _cell_types = {
+            'RAN': RANCell,
+            'RANv2': lambda num_cells: RANCellv2(num_cells, self.embedding_size + self.delta_encoding_size),
+            'RANv3': lambda num_cells: RANCellv3(self.embedding_size + self.delta_encoding_size),
+            'LRAN': lambda num_cells: RANCellv2(num_cells, self.embedding_size + self.delta_encoding_size, activation=None),
+            'LSTM': BasicLSTMCell,
+            'LSTM-LN': LayerNormBasicLSTMCell,
+            'GRU': GRUCell,
+            'GRU-LN': LayerNormGRUCell,
+            'RAN-LN': lambda num_cells: RANCell(num_cells, normalize=True),
+            'RANv2-LN': lambda num_cells: RANCellv2(num_cells, self.embedding_size + delta_encoding_size, normalize=True)
+        }
 
         if cell_type not in _cell_types:
             raise ValueError('unsupported cell type %s', cell_type)
@@ -72,7 +82,7 @@ class CANTRIPModel(TRIPModel):
         self.words = tf.placeholder(tf.int32, [self.batch_size, self.max_seq_len, self.max_doc_len], name="words")
 
         # Elapsed time deltas
-        self.deltas = tf.placeholder(tf.float32, [self.batch_size, self.max_seq_len, self.delta_buckets], name="deltas")
+        self.deltas = tf.placeholder(tf.float32, [self.batch_size, self.max_seq_len, self.delta_encoding_size], name="deltas")
 
         # Document lengths
         self.doc_lengths = tf.placeholder(tf.int32, [self.batch_size, self.max_seq_len], name="doc_lengths")
@@ -91,28 +101,30 @@ class CANTRIPModel(TRIPModel):
         print('Deltas: ', self.deltas)
         # deltas = tf.expand_dims(self.deltas, axis=-1)
         with tf.variable_scope('sequence'):
-            # if isinstance(self.doc_embeddings, tf.SparseTensor):
-            #     print('Using sparse concat')
-            #     sparse_deltas = dense_to_sparse(deltas)
-            #     print(sparse_deltas.get_shape())
-            #     x = tf.sparse_concat(axis=-1, sp_inputs=[self.doc_embeddings, sparse_deltas])
-            #
-            #     des = self.doc_embeddings.get_shape().as_list()
-            #     sds = sparse_deltas.get_shape().as_list()
-            #     des[-1] += sds[-1]
-            #
-            #     self.x = tf.SparseTensor(x.indices, x.values, dense_shape=des)
-            # else:
             self.deltas = tf.nn.dropout(self.deltas, keep_prob=0.5)
             self.x = tf.concat([self.doc_embeddings, self.deltas], axis=-1, name='rnn_input_concat')
-            self.seq_final_output = rnn_layer(self.cell_fn, self.num_hidden, self.x, self.seq_lengths)
-            self.seq_final_output = tf.nn.dropout(self.seq_final_output, keep_prob=0.5)
+            if self.dropout > 0:
+                self.x = tf.nn.dropout(self.x, 1 - self.dropout)
+            if self.cell_type in ['RANv2', 'RANv2-LN', 'RANv3', 'LRAN']:
 
-            self.output = tf.layers.dense(self.seq_final_output, units=256, activation=tf.nn.tanh,
-                                          name='final_state_dense')
+                if self.cell_type == 'RANv3':
+                    with tf.device('/cpu:0'):
+                        self.seq_final_output, self.weights = rnn_layer(self.cell_fn, self.num_hidden, self.x,
+                                                                        self.seq_lengths, return_input_weights=True)
+                else:
+                    self.seq_final_output, self.weights = rnn_layer(self.cell_fn, self.num_hidden, self.x,
+                                                                self.seq_lengths, return_input_weights=True)
+            else:
+                self.seq_final_output = rnn_layer(self.cell_fn, self.num_hidden, self.x, self.seq_lengths)
+            if self.dropout > 0:
+                self.seq_final_output = tf.nn.dropout(self.seq_final_output, 1 - self.dropout)
+
+            # self.output = tf.layers.dense(self.seq_final_output, units=256, activation=tf.nn.tanh,
+            #                               name='final_state_dense')
 
         # Convert to fun logits
-        self.logits = tf.layers.dense(self.output, units=self.num_classes, activation=None, name='class_logits')
+        self.logits = tf.layers.dense(self.seq_final_output, units=self.num_classes,
+                                      activation=None, name='class_logits')
 
     def _add_postprocessing(self):
         self.y = tf.argmax(self.logits, axis=-1, output_type=tf.int32, name='class_predictions')
@@ -213,9 +225,6 @@ class _CANTRIPModeSummarizer(object):
                     tf.summary.scalar('FN', fn),
                 ])
 
-            metric_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope=scope)
-            self.reset_op = tf.variables_initializer(var_list=metric_vars)
-
             self.summary = tf.summary.merge([
                 tf.summary.scalar('Accuracy', acc),
                 tf.summary.scalar('AUROC', auroc),
@@ -226,14 +235,26 @@ class _CANTRIPModeSummarizer(object):
                 confusion_matrix
             ])
 
-        self.metrics = {
-            'Accuracy': acc,
-            'AUROC': auroc,
-            'AUPRC': auprc,
-            'Precision': p,
-            'Recall': r,
-            'F1': f1
-        }
+            self.metrics = {
+                'Accuracy': acc,
+                'AUROC': auroc,
+                'AUPRC': auprc,
+                'Precision': p,
+                'Recall': r,
+                'F1': f1
+            }
 
-        self.metric_ops = [acc_op, auroc_op, auprc_op, p_op, r_op,
-                           [tp_op, tn_op, fp_op, fn_op]]
+            self.metric_ops = [acc_op, auroc_op, auprc_op, p_op, r_op,
+                               [tp_op, tn_op, fp_op, fn_op]]
+
+            if mode == 'train' and model.cell_type in ['RANv2', 'RANv2-LN']:
+                rnn_weights, rnn_weights_op = tf.metrics.mean_tensor(tf.reduce_mean(model.weights, axis=0))
+                self.rnn_weights = rnn_weights
+                self.metric_ops.append(rnn_weights_op)
+
+            metric_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope=scope)
+            self.reset_op = tf.variables_initializer(var_list=metric_vars)
+
+
+
+

@@ -2,10 +2,21 @@ import tensorflow as tf
 
 from tensorflow.nn.rnn_cell import LSTMStateTuple, MultiRNNCell
 
+from src.models.ran import RANStateTuple
 
-def embedding_layer(inputs, vocab_size, embedding_size):
+
+def create_embeddings(vocab_size, embedding_size, dropout):
+    embeddings = tf.get_variable("embeddings", [vocab_size, embedding_size])
+    if dropout > 0:
+        # We use vocabulary-level dropout
+        # Encourage the model not to depend on specific words in the vocabulary
+        embeddings = tf.nn.dropout(embeddings, keep_prob=1 - dropout, noise_shape=[1, embedding_size])
+    return embeddings
+
+
+def embedding_layer(inputs, vocab_size, embedding_size, dropout=0):
     with tf.device('/cpu:0'):
-        embeddings = tf.get_variable("embeddings", [vocab_size, embedding_size])
+        embeddings = create_embeddings(vocab_size, embedding_size, dropout)
         return tf.nn.embedding_lookup(embeddings, inputs)
 
 
@@ -16,7 +27,7 @@ def dense_to_sparse(tensor):
     return tf.SparseTensor(indices, values, dense_shape=shape)
 
 
-def rnn_layer(cell_fn, num_hidden, inputs, lengths):
+def rnn_layer(cell_fn, num_hidden, inputs, lengths, return_input_weights=False):
     stacked = isinstance(num_hidden, list)
 
     # Define type of RNN/memory cell
@@ -40,7 +51,8 @@ def rnn_layer(cell_fn, num_hidden, inputs, lengths):
     print('RNN Initial State:', state)
 
     # Run dynamic RNN; discard all outputs except final state
-    output, state = tf.nn.dynamic_rnn(cell=cell, inputs=inputs, sequence_length=lengths, initial_state=state)
+    output, state = tf.nn.dynamic_rnn(cell=cell, inputs=inputs, sequence_length=lengths, initial_state=state,
+                                      swap_memory=True)
 
     print('RNN Final State:', state)
     print('RNN Final State Type:', type(state))
@@ -57,10 +69,16 @@ def rnn_layer(cell_fn, num_hidden, inputs, lengths):
     # (1) a tuple containing the final output and final memory state, or
     # (2) the final output
 
+    if not isinstance(state, RANStateTuple) and return_input_weights:
+        return ValueError('can only return input weights from RANv2 cells')
 
     if isinstance(state, LSTMStateTuple):
-        final_output = state.h
+        return state.h
+    elif isinstance(state, RANStateTuple):
+        if return_input_weights:
+            print('Weights:', state.w)
+            return state.h, state.w
+        else:
+            return state.h
     else:
-        final_output = state
-
-    return final_output
+        return state

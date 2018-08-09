@@ -1,6 +1,7 @@
 import tensorflow as tf
+from tensorflow.nn.rnn_cell import GRUCell
 
-from src.models.layers import rnn_layer, embedding_layer
+from src.models.layers import rnn_layer, embedding_layer, create_embeddings
 
 
 def rnn_encoder(num_hidden):
@@ -18,10 +19,10 @@ def rnn_encoder(num_hidden):
                                                name='flat_lengths')
 
             # Apply RNN to all documents in all batches
-            flattened_doc_embeddings = rnn_layer(cell_fn=model.cell_fn,
-                                                    num_hidden=num_hidden,
-                                                    inputs=flattened_embedded_words,
-                                                    lengths=flattened_doc_lengths)
+            flattened_doc_embeddings = rnn_layer(cell_fn=GRUCell,
+                                                 num_hidden=num_hidden,
+                                                 inputs=flattened_embedded_words,
+                                                 lengths=flattened_doc_lengths)
 
             print('RNN Output:', flattened_doc_embeddings)
             print('RNN Output Type:', type(flattened_doc_embeddings))
@@ -99,13 +100,13 @@ def get_bow_vector(model):
     return tf.sparse_reorder(st)
 
 
-
 def dense_encoder(model):
     with tf.variable_scope('dense_encoder'):
         with tf.device("/cpu:0"):
             bow_vectors = get_bow_vector(model)
-            model.word_embeddings = tf.get_variable("word_embeddings", [model.vocabulary_size, model.embedding_size])
-            flat_bow_vectors = tf.sparse_reshape(bow_vectors, [model.batch_size * model.max_seq_len, model.vocabulary_size],
+            model.word_embeddings = create_embeddings(model.vocabulary_size, model.embedding_size, model.dropout)
+            flat_bow_vectors = tf.sparse_reshape(bow_vectors, [model.batch_size * model.max_seq_len,
+                                                               model.vocabulary_size],
                                                  name='flat_bow_vectors')
             # flat_bow_vectors = tf.nn.dropout(flat_bow_vectors, 0.5)
             flat_doc_embeddings = tf.sparse_tensor_dense_matmul(flat_bow_vectors, model.word_embeddings,

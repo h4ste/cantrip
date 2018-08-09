@@ -1,5 +1,8 @@
+import collections
+from typing import Iterable, Tuple, Any, Iterator
+
 import tensorflow as tf
-from tensorflow.python.ops.rnn_cell_impl import RNNCell
+from tensorflow.python.ops.rnn_cell_impl import RNNCell, LSTMStateTuple
 
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
@@ -14,50 +17,50 @@ _BIAS_VARIABLE_NAME = "bias"
 _WEIGHTS_VARIABLE_NAME = "kernel"
 
 
-def _checked_scope(cell, scope, reuse=None, **kwargs):
-    if reuse is not None:
-        kwargs["reuse"] = reuse
-    with vs.variable_scope(scope, **kwargs) as checking_scope:
-        scope_name = checking_scope.name
-        if hasattr(cell, "_scope"):
-            cell_scope = cell._scope  # pylint: disable=protected-access
-            if cell_scope.name != checking_scope.name:
-                raise ValueError(
-                    "Attempt to reuse RNNCell %s with a different variable scope than "
-                    "its first use.  First use of cell was with scope '%s', this "
-                    "attempt is with scope '%s'.  Please create a new instance of the "
-                    "cell if you would like it to use a different set of weights.  "
-                    "If before you were using: MultiRNNCell([%s(...)] * num_layers), "
-                    "change to: MultiRNNCell([%s(...) for _ in range(num_layers)]).  "
-                    "If before you were using the same cell instance as both the "
-                    "forward and reverse cell of a bidirectional RNN, simply create "
-                    "two instances (one for forward, one for reverse).  "
-                    "In May 2017, we will start transitioning this cell's behavior "
-                    "to use existing stored weights, if any, when it is called "
-                    "with scope=None (which can lead to silent model degradation, so "
-                    "this error will remain until then.)"
-                    % (cell, cell_scope.name, scope_name, type(cell).__name__,
-                       type(cell).__name__))
-        else:
-            weights_found = False
-            try:
-                with vs.variable_scope(checking_scope, reuse=True):
-                    vs.get_variable(_WEIGHTS_VARIABLE_NAME)
-                weights_found = True
-            except ValueError:
-                pass
-            if weights_found and reuse is None:
-                raise ValueError(
-                    "Attempt to have a second RNNCell use the weights of a variable "
-                    "scope that already has weights: '%s'; and the cell was not "
-                    "constructed as %s(..., reuse=True).  "
-                    "To share the weights of an RNNCell, simply "
-                    "reuse it in your second calculation, or create a new one with "
-                    "the argument reuse=True." % (scope_name, type(cell).__name__))
-
-        # Everything is OK.  Update the cell's scope and yield it.
-        cell._scope = checking_scope  # pylint: disable=protected-access
-        yield checking_scope
+# def _checked_scope(cell, scope, reuse=None, **kwargs):
+#     if reuse is not None:
+#         kwargs["reuse"] = reuse
+#     with vs.variable_scope(scope, **kwargs) as checking_scope:
+#         scope_name = checking_scope.name
+#         if hasattr(cell, "_scope"):
+#             cell_scope = cell._scope  # pylint: disable=protected-access
+#             if cell_scope.name != checking_scope.name:
+#                 raise ValueError(
+#                     "Attempt to reuse RNNCell %s with a different variable scope than "
+#                     "its first use.  First use of cell was with scope '%s', this "
+#                     "attempt is with scope '%s'.  Please create a new instance of the "
+#                     "cell if you would like it to use a different set of weights.  "
+#                     "If before you were using: MultiRNNCell([%s(...)] * num_layers), "
+#                     "change to: MultiRNNCell([%s(...) for _ in range(num_layers)]).  "
+#                     "If before you were using the same cell instance as both the "
+#                     "forward and reverse cell of a bidirectional RNN, simply create "
+#                     "two instances (one for forward, one for reverse).  "
+#                     "In May 2017, we will start transitioning this cell's behavior "
+#                     "to use existing stored weights, if any, when it is called "
+#                     "with scope=None (which can lead to silent model degradation, so "
+#                     "this error will remain until then.)"
+#                     % (cell, cell_scope.name, scope_name, type(cell).__name__,
+#                        type(cell).__name__))
+#         else:
+#             weights_found = False
+#             try:
+#                 with vs.variable_scope(checking_scope, reuse=True):
+#                     vs.get_variable(_WEIGHTS_VARIABLE_NAME)
+#                 weights_found = True
+#             except ValueError:
+#                 pass
+#             if weights_found and reuse is None:
+#                 raise ValueError(
+#                     "Attempt to have a second RNNCell use the weights of a variable "
+#                     "scope that already has weights: '%s'; and the cell was not "
+#                     "constructed as %s(..., reuse=True).  "
+#                     "To share the weights of an RNNCell, simply "
+#                     "reuse it in your second calculation, or create a new one with "
+#                     "the argument reuse=True." % (scope_name, type(cell).__name__))
+#
+#         # Everything is OK.  Update the cell's scope and yield it.
+#         cell._scope = checking_scope  # pylint: disable=protected-access
+#         return checking_scope
 
 
 def _linear(args,
@@ -137,6 +140,53 @@ def _linear(args,
     return nn_ops.bias_add(res, biases)
 
 
+_RANStateTuple = collections.namedtuple('RANStateTuple', ('h', 'c', 'w'))
+
+
+class RANStateTuple(_RANStateTuple):
+    __slots__ = ()
+
+
+    @property
+    def dtype(self):
+        (c, h) = self
+        if c.dtype != h.dtype:
+            raise TypeError("Inconsistent internal state: %s vs %s" %
+                            (str(c.dtype), str(h.dtype)))
+        return c.dtype
+
+
+# class Test(collections.namedtuple('a', 'b', 'c')):
+#
+#     def __iter__(self) -> Iterator[_T_co]:
+#         return super().__iter__()
+
+
+# class RANStateTuple(object):
+#
+#     __slots__ = ['h', 'c', 'w']
+#
+#     def __init__(self, h, c, w=None) -> None:
+#         self.h = h,
+#         self.c = c
+#         self.w = w
+#
+#     def __iter__(self):
+#         t = (self.h, self.c)
+#         return t.__iter__()
+#
+#     @property
+#     def dtype(self):
+#         (c, h) = self
+#         if c.dtype != h.dtype:
+#             raise TypeError("Inconsistent internal state: %s vs %s" %
+#                             (str(c.dtype), str(h.dtype)))
+#         return c.dtype
+
+
+
+
+
 # noinspection PyAbstractClass,PyMissingConstructor
 class RANCell(RNNCell):
     """Recurrent Additive Networks (cf. https://arxiv.org/abs/1705.07393)."""
@@ -158,7 +208,7 @@ class RANCell(RNNCell):
         return self._num_units
 
     def __call__(self, inputs, state, scope=None):
-        with _checked_scope(self, scope or "ran_cell", reuse=self._reuse):
+        with vs.variable_scope(scope or "ran_cell", reuse=self._reuse):
             with vs.variable_scope("gates"):
                 value = tf.nn.sigmoid(_linear([state, inputs], 2 * self._num_units, True, normalize=self._normalize))
                 i, f = array_ops.split(value=value, num_or_size_splits=2, axis=1)
@@ -176,9 +226,8 @@ class RANCell(RNNCell):
 class RANCellv2(RNNCell):
     """Recurrent Additive Networks (cf. https://arxiv.org/abs/1705.07393)."""
 
-    def __init__(self, num_units, input_size=None, activation=math_ops.tanh, normalize=False, reuse=None):
-        if input_size is not None:
-            logging.warn("%s: The input_size parameter is deprecated.", self)
+    def __init__(self, num_units, input_size, activation=math_ops.tanh, normalize=False, reuse=None):
+        self._input_size = input_size
         self._num_units = num_units
         self._activation = activation
         self._normalize = normalize
@@ -186,24 +235,63 @@ class RANCellv2(RNNCell):
 
     @property
     def state_size(self):
-        return tf.contrib.rnn.LSTMStateTuple(self._num_units, self.output_size)
+        return RANStateTuple(self._num_units, self.output_size, self._input_size)
 
     @property
     def output_size(self):
         return self._num_units
 
     def __call__(self, inputs, state, scope=None):
-        with _checked_scope(self, scope or "ran_cell", reuse=self._reuse):
+        with vs.variable_scope(scope or "ran_cell", reuse=self._reuse):
             with vs.variable_scope("gates"):
-                c, h = state
+                c, h, w = state
                 gates = tf.nn.sigmoid(_linear([inputs, h], 2 * self._num_units, True, normalize=self._normalize))
                 i, f = array_ops.split(value=gates, num_or_size_splits=2, axis=1)
 
-            with vs.variable_scope("candidate"):
+            with vs.variable_scope("candidate") as scope:
                 content = _linear([inputs], self._num_units, True, normalize=self._normalize)
+                scope.reuse_variables()
+                weights = tf.get_variable('kernel')
 
             new_c = i * content + f * c
-            new_h = self._activation(c)
-            new_state = tf.contrib.rnn.LSTMStateTuple(new_c, new_h)
+
+            if self._activation:
+                new_h = self._activation(c)
+            else:
+                new_h = c
+
+            component_weights = tf.matmul((new_c / content), tf.transpose(weights))
+            new_state = RANStateTuple(new_c, new_h, component_weights)
+            output = new_h
+        return output, new_state
+
+
+class RANCellv3(RNNCell):
+    """Recurrent Additive Networks (cf. https://arxiv.org/abs/1705.07393)."""
+
+    def __init__(self, input_size, reuse=None):
+        self._input_size = input_size
+        self._reuse = reuse
+
+    @property
+    def state_size(self):
+        return RANStateTuple(self._input_size, self._input_size, self._input_size)
+
+    @property
+    def output_size(self):
+        return self._input_size
+
+    def __call__(self, inputs, state, scope=None):
+        with vs.variable_scope(scope or "ran_cell", reuse=self._reuse):
+            with vs.variable_scope("gates"):
+                c, h, w = state
+                gates = tf.nn.sigmoid(_linear([inputs, h], 2 * self._input_size, True))
+                i, f = array_ops.split(value=gates, num_or_size_splits=2, axis=1)
+
+            new_c = i * inputs + f * c
+            new_h = new_c
+
+            component_weights = new_c / inputs
+            new_state = RANStateTuple(new_c, new_h, component_weights)
             output = new_h
         return output, new_state

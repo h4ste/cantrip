@@ -4,16 +4,16 @@ import os
 import numpy as np
 
 import tensorflow as tf
+from collections import Iterable
 from tensorflow.python import debug as tf_debug
 from tensorflow.python.platform import gfile
 
 from sklearn.model_selection import train_test_split
 from tqdm import trange, tqdm
 
-from src.data import Cohort
+from src.data import Cohort, encode_delta_discrete, encode_delta_continuous
 from src.models import CANTRIPModel, CANTRIPOptimizer, CANTRIPSummarizer
-# noinspection PyProtectedMember
-from src.models.cantrip import _cell_types
+from src.models.cantrip_model import CELL_TYPES
 from src.models.doc import rnn_encoder, cnn_encoder, bow_encoder, dan_encoder, dense_encoder
 from src.models.util import make_dirs_quiet, delete_dir_quiet
 
@@ -23,96 +23,145 @@ parser = argparse.ArgumentParser(description='invoke CANTRIP')
 parser.add_argument('--chronology-path', required=True, help='path to cohort chronologies')
 parser.add_argument('--vocabulary-path', required=True, help='path to cohort vocabulary')
 parser.add_argument('--tdt-ratio', default='8:1:1', help='training:development:testing ratio')
-parser.add_argument('--max-seq-len', type=int, default=7, help='maximum number of documents per chronology')
-parser.add_argument('--max-doc-len', type=int, default=100, help='maximum number of terms to consider per document')
+parser.add_argument('--max-chron-len', type=int, default=7, metavar='L',
+                    help='maximum number of snapshots per chronology')
+parser.add_argument('--max-snap-len', type=int, default=200, metavar='N',
+                    help='maximum number of observations to consider per snapshot')
 parser.add_argument('--vocabulary-size', type=int, default=50_000, metavar='V',
                     help='maximum vocabulary size, only the top V occurring terms will be used')
-parser.add_argument('--word-embedding-size', type=int, default=200, help="size of word embeddings")
-parser.add_argument('--doc-embedding-size', type=int, default=200, help="size of document embeddings")
-parser.add_argument('--num-hidden', type=int, nargs='+', default=[100], help="size of hidden layers in RNN")
+parser.add_argument('--observation-embedding-size', type=int, default=200, help="dimensions of observation embedding vectors")
+parser.add_argument('--snapshot-embedding-size', type=int, default=200, help="dimensions of clinical snapshot encoding vectors")
+parser.add_argument('--rnn-num-hidden', type=int, nargs='+', default=[100],
+                    help='size of hidden layer(s) used for inferring the clinical picture; '
+                         'multiple arguments result in multiple hidden layers')
 parser.add_argument('--batch-size', type=int, default=40, help='batch size')
-parser.add_argument('--cell-type', choices=_cell_types.keys(), default='LSTM', help='type of RNN cell to use')
-parser.add_argument('--doc-encoder', choices=['RNN', 'CNN', 'BOW', 'DAN', 'DENSE'], default='RNN',
-                    help='type of document encoder to use')
+parser.add_argument('--rnn-cell-type', choices=CELL_TYPES, default='LSTM',
+                    help='type of RNN cell to use for inferring the clinical picture')
+parser.add_argument('--snapshot-encoder', choices=['RNN', 'CNN', 'BAG', 'DAN', 'DENSE'],
+                    default='RNN', help='type of clinical snapshot encoder to use')
 
-# doc_encoder = parser.add_mutually_exclusive_group()
-doc_encoder_rnn = parser.add_argument_group(title='Document Encoder: RNN')
-doc_encoder_rnn.add_argument('--doc-rnn-num-hidden', type=int, default=1,
-                             help='number of layers in document encoder RNN')
+doc_encoder_rnn = parser.add_argument_group(title='Snapshot Encoder: RNN Flags')
+doc_encoder_rnn.add_argument('--snapshot-rnn-num-hidden', type=int, nargs='+', default=[200],
+                             help='size of hidden layer(s) used for combining clinical obserations to produce the '
+                                  'clinical snapshot encoding; multiple arguments result in multiple hidden layers')
+doc_encoder_rnn.add_argument('--snapshot-rnn-cell-type', choices=['LSTM', 'LSTM-LN', 'GRU', 'GRU-LN', 'RAN', 'RAN-LN'],
+                             nargs='+', default=[200],
+                             help='size of hidden layer(s) used for combining clinical observations to produce the '
+                                  'clinical snapshot encoding; multiple arguments result in multiple hidden layers')
 
-doc_encoder_cnn = parser.add_argument_group(title='Document Encoder: CNN')
-doc_encoder_cnn.add_argument('--doc-cnn-grams', type=int, nargs='?', default=[3, 4, 5], help='n-grams to use in CNN')
-doc_encoder_cnn.add_argument('--doc-cnn-num-filters', type=int, default=1000, help='number of filters used in CNN')
-doc_encoder_cnn.add_argument('--doc-cnn-dropout', type=float, default=0., help='dropout for CNN')
-# doc_encoder_bow = doc_encoder.add_argument_group(title='Document Encoder: BOW')
-# doc_encoder_bow.add_argument('--doc-bow', default=True)
+doc_encoder_cnn = parser.add_argument_group(title='Snapshot Encoder: CNN Flags')
+doc_encoder_cnn.add_argument('--snapshot-cnn-windows', type=int, nargs='?', default=[3, 4, 5],
+                             help='length of convolution window(s) for CNN-based snapshot encoder; '
+                                  'multiple arguments results in multiple convolution windows')
+doc_encoder_cnn.add_argument('--snapshot-cnn-kernels', type=int, default=1000, help='number of filters used in CNN')
 
-doc_encoder_dan = parser.add_argument_group(title='Document Encoder: DAN')
-doc_encoder_cnn.add_argument('--doc-dan-num-hidden-avg', type=int, nargs='+', default=[200, 200],
-                             help='number of hidden units to use in document-level layers')
-doc_encoder_cnn.add_argument('--doc-dan-num-hidden-word', type=int, nargs='+', default=[200, 200],
-                             help='number of hidden units to use in word-level layers')
+
+doc_encoder_dan = parser.add_argument_group(title='Snapshot Encoder: DAN Falgs')
+doc_encoder_cnn.add_argument('--snapshot-dan-num-hidden-avg', type=int, nargs='+', default=[200, 200],
+                             help='number of hidden units to use when refining the DAN average layer; '
+                                  'multiple arguments results in multiple dense layers')
+doc_encoder_cnn.add_argument('--snapshot-dan-num-hidden-obs', type=int, nargs='+', default=[200, 200],
+                             help='number of hidden units to use when refining clinical observation embeddings; '
+                                  'multiple arguments results in multiple dense layers')
 
 parser.add_argument('--summary-dir', default='data/working/summaries')
 parser.add_argument('--checkpoint-dir', default='models/checkpoints')
 parser.add_argument('--num-epochs', type=int, default='30', help='number of training epochs')
-parser.add_argument('--validate-every', type=int, default='10',
-                    help='how many training batches between validation steps')
-parser.add_argument('--mode', choices=['TRAIN', 'TEST', 'INFER'], default='TRAIN')
-parser.add_argument('--clear', default=False, action='store_true')
+parser.add_argument('--mode', choices=['TRAIN'], default='TRAIN',
+                    help='only works with TRAIN for now')
+parser.add_argument('--clear', default=False, action='store_true',
+                    help='remove previous summary/checkpoints before starting this run')
 parser.add_argument('--debug', default=None, help='hostname:port of TensorBoard debug server')
+parser.add_argument('--dropout', type=float, default=0., help='dropout used for all dropout layers'
+                                                              ' (including the vocabulary)')
+parser.add_argument('--early-term', default=False, action='store_true', help='stop when F1 on dev set decreases; '
+                                                                             'this is pretty much always a bad idea')
+parser.add_argument('--save-weights-to-file', default=None, help='if using RANv2 cell type, setting this option to '
+                                                                 'a file path will produce the 30 most/least important'
+                                                                 'clinical observations when predicting pneumonia as'
+                                                                 'measured by the RANv2 activations'
+                                                                 '(this is almost always completely useless)')
+
+parser.add_argument('--discrete-deltas', dest='delta_encoder', action='store_const',
+                    const=encode_delta_discrete, default=encode_delta_continuous,
+                    help='rather than encoding deltas as tanh(log(delta)), '
+                         'discretize them into buckets: > 1 day, > 2 days, > 1 week, etc.'
+                         '(we don\'t have enough data for this be useful)')
 
 
-def train_devel_test_split(data, ratio):
+def make_train_devel_test_split(data: Iterable, ratio: str) -> (Iterable, Iterable, Iterable):
+    """
+    Split the given dataset into training, development, and testing sets using the given ratio
+    e.g., split(data, \'8:1:1\') splits 80% as training, 10% as development, and 10% as testing
+    :param data: dataset to split
+    :param ratio: ratio encoded as a string, specified as train:devel:test
+    :return: a triple containing the training, development, and testing sets
+    """
+    # Parse the splitting ratio
     train, devel, test = [int(x) for x in ratio.split(':')]
 
-    total = train + devel + test
-    train_devel_total = train + devel
+    # First split into training+development and test
+    train_devel, _test = train_test_split(data, test_size=(test / (train + devel + test)))
+    # Then split training+development into training and development
+    _train, _devel = train_test_split(train_devel, test_size=(devel / (train + devel)))
 
-    train_devel, _test = train_test_split(data, test_size=(test / total))
-    _train, _devel = train_test_split(train_devel, test_size=(devel / train_devel_total))
-
-    del train_devel
     return _train, _devel, _test
 
 
-def train_model(model, args):
-    cohort = Cohort.from_chronologies(args.chronology_path, args.vocabulary_path, args.vocabulary_size)
+def run_model(model: CANTRIPModel, cohort: Cohort, args):
+    """
+    Run the given model using the given cohort and experimental settings contained in args.
 
-    train, devel, test = train_devel_test_split(cohort.patients(), args.tdt_ratio)
+    This function:
+    (1) balanced the dataset
+    (2) splits the cohort intro training:development:testing sets at the patient-level
+    (3) trains CANTRIP and saves checkpoint/summaries for TensorBoard
+    (4) evaluates CANTRIP on the development and testing set
+    :param model: an instantiated CANTRIP model
+    :param cohort: the cohort to use for this experimental run
+    :param args: command-line arguments specifying model/experiment parameters
+    :return: nothing
+    """
 
-    def count_labels(split):
-        from collections import Counter
-        cnt = Counter()
-        for visit in cohort[split].visits():
-            for label in visit.labels:
-                cnt[label] += 1
-        return cnt
+    # Balance the cohort to have an even number of positive/negative chronologies for each patient
+    cohort = cohort.balance_chronologies()
 
-    print('Train:', count_labels(train))
-    print('Devel:', count_labels(devel))
-    print('Test:', count_labels(test))
+    # Split into training:development:testing
+    train, devel, test = make_train_devel_test_split(cohort.patients(), args.tdt_ratio)
 
+    # Save summaries and checkpoints into the directories passed to the script
     model_summaries_dir = os.path.join(args.summary_dir, args.cell_type, args.doc_encoder)
     model_checkpoint_dir = os.path.join(args.checkpoint_dir, args.cell_type, args.doc_encoder)
 
+    # Clear any previous summaries/checkpoints if asked
     if args.clear:
         delete_dir_quiet(model_summaries_dir)
         delete_dir_quiet(model_checkpoint_dir)
         print('Deleted previous model summaries/checkpoints')
 
+    # Make output directories so we don't blow up when saving
     make_dirs_quiet(model_checkpoint_dir)
 
+    # Instantiate CANTRIP optimizer and summarizer classes
     optimizer = CANTRIPOptimizer(model)
     summarizer = CANTRIPSummarizer(model, optimizer)
+
+    # Now that everything has been defined in TensorFlow's computation graph, initialize our model saver
     saver = tf.train.Saver(tf.global_variables())
 
+    # Tell TensorFlow to wake up and get ready to rumble
     with tf.Session() as sess:
+
+        # If we specified a TensorBoard debug server, connect to it
+        # (this is actually pretty sweet but you have to manually step through your model's flow so 99% of the time
+        # you shouldn't need it)
         if args.debug is not None:
             sess = tf_debug.TensorBoardDebugWrapperSession(sess, args.debug)
 
+        # Create our summary writer (used by TensorBoard)
         summary_writer = tf.summary.FileWriter(model_summaries_dir, sess.graph)
 
+        # Restore model if it exists (and we didn't clear it), otherwise create a shiny new one
         checkpoint = tf.train.get_checkpoint_state(model_checkpoint_dir)
         if checkpoint and gfile.Exists(checkpoint.model_checkpoint_path + '.index'):
             print("Reading model parameters from '%s'...", checkpoint.model_checkpoint_path)
@@ -121,32 +170,51 @@ def train_model(model, args):
             print("Creating model with fresh parameters...")
             sess.run(tf.global_variables_initializer())
 
+        # Initialize local variables (these are just used for computing average metrics)
         sess.run(tf.local_variables_initializer())
 
+        fetches = {'Logits': model.logits}
+        if args.save_weights_to_file:
+            fetches['RNN Weights'] = model.weights
+
         with trange(args.num_epochs, desc='Training') as train_log:
+            prev_train, prev_devel, prev_test = {}, {'F1': 0}, {}
+            best_weights = {}
             for i in train_log:
                 global_step, _ = sess.run([optimizer.global_step, summarizer.train.reset_op])
+                if args.save_weights_to_file:
+                    weights = {}
+                    counts = {}
                 with tqdm(cohort[train].make_epoch_batches(**vars(args)), desc='Epoch %d' % (i + 1)) as batch_log:
                     for j, batch in enumerate(batch_log):
                         # if np.random.random() < 0.25:
-                        batch.deltas = np.zeros_like(batch.deltas)
+                        # batch.deltas = np.zeros_like(batch.deltas)
                         _, batch_summary, batch_metrics, tensors, global_step = sess.run(
                             [[optimizer.train_op, summarizer.train.metric_ops],
                              summarizer.batch_summary, summarizer.batch_metrics,
-                             {'SRNN.x': model.x,
-                              'SRNN.final_out': model.seq_final_output,
-                              'Model.out': model.output,
-                              'Model.logits': model.logits},
+                             fetches,
                              optimizer.global_step],
                             batch.feed(model))
                         batch_log.set_postfix(batch_metrics)
                         summary_writer.add_summary(batch_summary, global_step=global_step)
-                        # tqdm.write('Batch %d' % j)
-                        # for name, tensor in tensors.items():
-                        #     tqdm.write('%s: %s' % (name, str(tensor)))
-                        # input('Press any key to continue...')
 
-                        # input('Press any key to continue...')
+                        if args.save_weights_to_file:
+                            for label, activations in zip(batch.labels, tensors['RNN Weights']):
+                                if label not in activations:
+                                    weights[label] = activations
+                                    counts[label] = 1
+                                else:
+                                    weights[label] = np.add(weights[label], activations)
+                                    counts[label] += 1
+
+                if args.save_weights_to_file:
+                    weights['ANY'] = (np.add(weights[0], weights[1]) / (counts[0] + counts[1]))
+                    for label in [1, 0]:
+                        weights[label] /= counts[label]
+                    best_weights = weights
+
+                train_metrics, train_summary = sess.run([summarizer.train.metrics, summarizer.train.summary])
+                summary_writer.add_summary(train_summary, global_step=global_step)
 
                 # if (j + 1) % args.validate_every == 0:
                 sess.run(summarizer.devel.reset_op)
@@ -156,25 +224,80 @@ def train_model(model, args):
                 train_log.set_postfix(devel_metrics)
                 summary_writer.add_summary(devel_summary, global_step=global_step)
 
-                summary_writer.add_summary(sess.run(summarizer.train.summary), global_step=global_step)
-
-                saver.save(sess, model_checkpoint_dir, global_step=global_step)
-
                 sess.run(summarizer.test.reset_op)
                 for batch in cohort[test].make_epoch_batches(**vars(args)):
                     sess.run([summarizer.test.metrics, summarizer.test.metric_ops], batch.feed(model))
-                summary_writer.add_summary(sess.run(summarizer.test.summary), global_step=global_step)
+                test_metrics, test_summary = sess.run([summarizer.test.metrics, summarizer.test.summary])
+                summary_writer.add_summary(test_summary, global_step=global_step)
+
+                if devel_metrics['F1'] > prev_devel['F1']:
+                    # if args.save_weights_to_file:
+                    #     for label in weights.keys():
+                    #         weights[label] /= counts[label]
+                    #     best_weights = weights
+                    prev_devel = devel_metrics
+                    prev_train = train_metrics
+                    prev_test = test_metrics
+                    saver.save(sess, model_checkpoint_dir, global_step=global_step)
+                elif args.early_term:
+                    tqdm.write('Early stop!')
+                    break
+
+        tqdm.write('Train: %s' % str(prev_train))
+        tqdm.write('Devel: %s' % str(prev_devel))
+        tqdm.write('Test: %s' % str(prev_test))
+
+        tqdm.write(print_latex_performance(prev_train, prev_devel, prev_test))
+
+        if args.save_weights_to_file:
+            if args.doc_encoder == 'BOW':
+                with open(args.save_weights_to_file, 'w') as weight_file:
+                    for label in [1, 0, 'ANY']:
+                        print('\nLabel: %s' % label, file=weight_file)
+                        print_feature_weights(cohort.vocabulary.terms, best_weights[label], weight_file)
+
+
+def print_latex_performance(train, devel, test):
+    def evaluate(dataset, metrics=None):
+        if metrics is None:
+            metrics = ['Accuracy', 'Precision', 'Recall', 'F1', 'AUROC']
+        return [dataset[metric] for  metric in metrics]
+
+    from tabulate import tabulate
+
+    table = tabulate([evaluate(train),
+                      evaluate(devel),
+                      evaluate(test)],
+                     headers=['Acc.', 'P', 'R', 'F1', 'AUC'],
+                     tablefmt='latex')
+    return table
+
+
+def print_feature_weights(vocabulary, weights, file=None):
+    weighted_terms = zip(vocabulary,  weights)
+    sorted_terms = sorted(weighted_terms, key=lambda t: t[1], reverse=True)
+    print('Rank\tObservation\tImportance', file=file)
+    for i, (term, weight) in enumerate(sorted_terms[:30]):
+        print('%d\t%s\t%f' % (i + 1, term, weight), file=file)
+    print('...\t...\t...', file=file)
+    for i, (term, weight) in enumerate(sorted_terms[-30:]):
+        print('%d\t%s\t%f' % (len(sorted_terms) - 29 + i, term, weight), file=file)
 
 
 def main(argv):
     args = parser.parse_args(argv[1:])
 
+    cohort = Cohort.from_chronologies(args.chronology_path, args.vocabulary_path, args.vocabulary_size)
+    vocabulary_size = len(cohort.vocabulary)
+
+    embedding_size = args.word_embedding_size
     if args.doc_encoder == 'RNN':
         doc_encoder = rnn_encoder(args.doc_rnn_num_hidden)
     elif args.doc_encoder == 'CNN':
-        doc_encoder = cnn_encoder(args.doc_cnn_grams, args.doc_cnn_num_filters, args.doc_cnn_dropout)
+        doc_encoder = cnn_encoder(args.doc_cnn_grams, args.doc_cnn_num_filters, args.dropout)
     elif args.doc_encoder == 'BOW':
         doc_encoder = bow_encoder
+        embedding_size = vocabulary_size
     elif args.doc_encoder == 'DENSE':
         doc_encoder = dense_encoder
     elif args.doc_encoder == 'DAN':
@@ -182,18 +305,25 @@ def main(argv):
     else:
         raise ValueError('Given illegal document encoder %s' % args.doc_encoder)
 
+    if args.delta_encoder == encode_delta_discrete:
+        delta_encoding_size = len(_DELTA_BUCKETS)
+    else:
+        delta_encoding_size = 1
+
     model = CANTRIPModel(max_seq_len=args.max_seq_len,
                          max_doc_len=args.max_doc_len,
-                         vocabulary_size=args.vocabulary_size,
-                         embedding_size=args.word_embedding_size,
+                         vocabulary_size=vocabulary_size,
+                         embedding_size=embedding_size,
                          num_hidden=args.num_hidden,
                          cell_type=args.cell_type,
                          batch_size=args.batch_size,
                          doc_embedding=doc_encoder,
-                         num_classes=2)
+                         dropout=args.dropout,
+                         num_classes=2,
+                         delta_encoding_size=delta_encoding_size)
 
     if args.mode == 'TRAIN':
-        train_model(model, args)
+        run_model(model, cohort, args)
 
 
 if __name__ == '__main__':

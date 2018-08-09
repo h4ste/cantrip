@@ -8,6 +8,7 @@ _UNK = 'UNK'
 
 _DELTA_BUCKETS = [1, 7, 30, 60, 90, 180, 360, 720]
 
+
 class Vocabulary(object):
     def __init__(self, term_index=None, term_frequencies=None, terms=None, return_unk=True):
         if terms is None:
@@ -46,12 +47,12 @@ class Vocabulary(object):
             for i, line in enumerate(tqdm(vocabulary.readlines(), desc='Loading vocabulary')):
                 if max_vocab_size is None or i < max_vocab_size:
                     term, frequency = line.split('\t')
-                    term_index[term] = i
+                    term_index[term] = len(terms)
                     terms.append(term)
                     term_frequencies.append(int(frequency))
                 else:
-                    _, frequency = line.split
-                    term_frequencies[0] += frequency
+                    _, frequency = line.split('\t')
+                    term_frequencies[0] += int(frequency)
 
         return cls(term_index, term_frequencies, terms, return_unk=return_unk)
 
@@ -131,6 +132,22 @@ class Visit(object):
         return len(self.deltas)
 
 
+def encode_delta_discrete(elapsed_seconds):
+    elapsed_days = elapsed_seconds / 60 / 60 / 24
+    return [1 if elapsed_days <= bucket else 0 for bucket in _DELTA_BUCKETS]
+
+
+encode_delta_discrete.size = len(_DELTA_BUCKETS)
+
+
+def encode_delta_continuous(elapsed_seconds):
+    elapsed_days = elapsed_seconds / 60 / 60 / 24
+    return np.tanh(np.log(elapsed_days + 1))
+
+
+encode_delta_continuous.size = 1
+
+
 # noinspection PyMissingConstructor
 class Cohort(object):
 
@@ -193,7 +210,7 @@ class Cohort(object):
                         break
 
                 # We only care about patients who were eventually diagnosed, and who were not diagnosed in the first day
-                if labels[-1] == 1 and len(deltas) > 2 and labels[0] == 0:
+                if labels[0] == 0 and len(deltas) > 2 and labels[-1] == 1:
                     cohort[subject_id].append(Visit(deltas[1:], labels[1:], docs[:-1]))
                 else:
                     filtered_visits += 1
@@ -205,7 +222,7 @@ class Cohort(object):
                 del cohort[subject_id]
 
         print('Loaded cohort of %d patients with %d visits (after filtering %d patients and %d visits)' % (
-            len(cohort.keys()), len(cohort.values()), filtered_patients, filtered_visits))
+            len(cohort.keys()), np.sum([len(value) for value in cohort.values()]), filtered_patients, filtered_visits))
 
         return cls.from_dict(cohort, vocabulary)
 
@@ -233,37 +250,51 @@ class Cohort(object):
         for subject_id in self.patient_vocabulary.terms:
             yield (subject_id, self[subject_id])
 
-    def make_epoch_batches(self, batch_size, max_doc_len, max_seq_len, limit=None, **kwargs):
+    def balance_chronologies(self):
+        balanced_chronologies = []
+        for visits in self.chronologies:
+            balanced_visits = np.empty(2 * len(visits), dtype=np.object)
+            balanced_visits[0::2] = visits
+            balanced_visits[1::2] = [visit.truncate(-1) for visit in visits]
+            balanced_chronologies.append(balanced_visits)
+        return Cohort(balanced_chronologies, self.vocabulary, self.patient_vocabulary)
+
+    def make_simple_classification(self, delta_encoder=encode_delta_continuous, final_only=False, **kwargs):
+        x = []
+        y = []
+        visits = np.random.permutation(self.visits())
+        V = len(self.vocabulary)
+        for visit in visits:
+            if final_only:
+                slices = [-1]
+            else:
+                slices = range(len(visit))
+
+            for i in slices:
+                bow = np.zeros(shape=V, dtype=np.int32)
+                bow[visit.docs[i]] = 1
+
+                deltas = np.asarray([delta_encoder(visit.deltas[i])])
+                x.append(np.concatenate([deltas, bow], axis=0))
+                y.append(visit.labels[i])
+        return np.asarray(x), np.asarray(y)
+
+    def make_epoch_batches(self, batch_size, max_doc_len, max_seq_len, limit=None,
+                           delta_encoder=encode_delta_continuous, **kwargs):
         visits = np.random.permutation(self.visits())
 
-        balanced_visits = np.empty(2 * len(visits), dtype=visits.dtype)
-        balanced_visits[0::2] = visits
-        balanced_visits[1::2] = np.random.permutation([visit.truncate(-1) for visit in visits])
-
-        # truncated_visits = []
-        # for visit in visits:
-        #     if len(visit) > 1:
-        #         truncated_visits.append(visit.truncate(-1))
-        #
-        # balanced_visits = np.empty(len(visits) + len(truncated_visits), dtype=visits.dtype)
-        # balanced_visits[0:2 * len(truncated_visits):2] = visits[:len(truncated_visits)]
-        # balanced_visits[1:2 * len(truncated_visits) + 1:2] = np.random.permutation(truncated_visits)
-        # balanced_visits[2 * len(truncated_visits):] = visits[len(truncated_visits):]
-
-        # balanced_visits = np.concatenate([visits, np.random.permutation(truncated_visits)])
-
-        num_batches = balanced_visits.shape[0] // batch_size
+        num_batches = visits.shape[0] // batch_size
         if limit is not None:
             num_batches = min(num_batches, limit)
 
         # Throw away the last batch if its incomplete (shouldn't be an issue since we are permuting the order)
         truncate_length = num_batches * batch_size
         # print('Truncate:', truncate_length, 'vs.', 'Actual:', len(balanced_visits))
-        balanced_visits = balanced_visits[:truncate_length]
+        balanced_visits = visits[:truncate_length]
         # print('Balanced.shape:', balanced_visits.shape, 'Num. batches:', num_batches)
         batches = np.split(balanced_visits, num_batches, axis=0)
 
-        return [VisitBatch.from_visits(batch, max_doc_len, max_seq_len) for batch in batches]
+        return [VisitBatch.from_visits(batch, max_doc_len, max_seq_len, delta_encoder) for batch in batches]
 
     def make_subseq_epoch_batches(self, batch_size, max_doc_len, max_seq_len, limit=None, **kwargs):
         # Permute visit order
@@ -327,9 +358,9 @@ class VisitBatch(object):
         self.doc_lens = doc_lens
 
     @classmethod
-    def from_visits(cls, visits, max_doc_len, max_seq_len):
+    def from_visits(cls, visits, max_doc_len, max_seq_len, delta_encoder):
         batch_size = batch_size = visits.shape[0]
-        deltas = np.zeros([batch_size, max_seq_len, len(_DELTA_BUCKETS)], np.float32)
+        deltas = np.zeros([batch_size, max_seq_len, delta_encoder.size], np.float32)
         seq_lens = np.zeros(batch_size, np.int32)
         labels = np.zeros(batch_size, np.int32)
         docs = np.zeros([batch_size, max_seq_len, max_doc_len], np.int32)
@@ -342,7 +373,7 @@ class VisitBatch(object):
             for j, delta in enumerate(visit.deltas[:seq_end]):
                 # We discretize elapsed time into buckets
                 # To preserve ordinality, we put a 1 into *every* bucket that is <= delta
-                deltas[i, j] = [1 if delta >= bucket else 0 for bucket in _DELTA_BUCKETS]
+                deltas[i, j] = delta_encoder(delta)
             # deltas[i, :seq_end] = visit.deltas[:seq_end]
             labels[i] = visit.labels[seq_end - 1]
             seq_lens[i] = seq_end
