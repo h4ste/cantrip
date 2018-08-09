@@ -6,7 +6,7 @@ from tensorflow.nn.rnn_cell import BasicLSTMCell, GRUCell, MultiRNNCell
 from src.models.ran.ran_cell import RANCell, RANCellv2, RANCellv3
 from src.models.rnn_cells import LayerNormGRUCell
 from src.models.trip import TRIPModel
-from src.models.doc.doc_encoder import rnn_encoder
+from src.models.encoder.snapshot_encoder import rnn_encoder
 from src.models.layers import rnn_layer, dense_to_sparse
 from src.data.scribe_data import  _DELTA_BUCKETS
 

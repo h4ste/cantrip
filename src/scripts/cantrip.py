@@ -1,10 +1,10 @@
 import argparse
 import os
+from collections import Iterable
 
 import numpy as np
 
 import tensorflow as tf
-from collections import Iterable
 from tensorflow.python import debug as tf_debug
 from tensorflow.python.platform import gfile
 
@@ -15,29 +15,38 @@ from tabulate import tabulate
 from src.data import Cohort, encode_delta_discrete, encode_delta_continuous
 from src.models import CANTRIPModel, CANTRIPOptimizer, CANTRIPSummarizer
 from src.models.cantrip_model import CELL_TYPES
-from src.models.doc import rnn_encoder, cnn_encoder, bow_encoder, dan_encoder, dense_encoder
+from src.models.encoder import rnn_encoder, cnn_encoder, bow_encoder, dan_encoder, dense_encoder
 from src.models.util import make_dirs_quiet, delete_dir_quiet
 
 np.random.seed(1337)
 
-parser = argparse.ArgumentParser(description='invoke CANTRIP')
+parser = argparse.ArgumentParser(description='train and evaluate CANTRIP using the given chronologies and observation '
+                                             'vocabulary')
+
+# Data parameters
 parser.add_argument('--chronology-path', required=True, help='path to cohort chronologies')
 parser.add_argument('--vocabulary-path', required=True, help='path to cohort vocabulary')
-parser.add_argument('--tdt-ratio', default='8:1:1', help='training:development:testing ratio')
+
+# Chronology datastructure parameters
 parser.add_argument('--max-chron-len', type=int, default=7, metavar='L',
                     help='maximum number of snapshots per chronology')
 parser.add_argument('--max-snap-len', type=int, default=200, metavar='N',
                     help='maximum number of observations to consider per snapshot')
 parser.add_argument('--vocabulary-size', type=int, default=50_000, metavar='V',
                     help='maximum vocabulary size, only the top V occurring terms will be used')
+parser.add_argument('--discrete-deltas', dest='delta_encoder', action='store_const',
+                    const=encode_delta_discrete, default=encode_delta_continuous,
+                    help='rather than encoding deltas as tanh(log(delta)), '
+                         'discretize them into buckets: > 1 day, > 2 days, > 1 week, etc.'
+                         '(we don\'t have enough data for this be useful)')
+
+# CANTRIP: General parameters
+parser.add_argument('--dropout', type=float, default=0., help='dropout used for all dropout layers'
+                                                              ' (including the vocabulary)')
+
+# CANTRIP: Clinical Snapshot Encoder parameters
 parser.add_argument('--observation-embedding-size', type=int, default=200, help="dimensions of observation embedding vectors")
 parser.add_argument('--snapshot-embedding-size', type=int, default=200, help="dimensions of clinical snapshot encoding vectors")
-parser.add_argument('--rnn-num-hidden', type=int, nargs='+', default=[100],
-                    help='size of hidden layer(s) used for inferring the clinical picture; '
-                         'multiple arguments result in multiple hidden layers')
-parser.add_argument('--batch-size', type=int, default=40, help='batch size')
-parser.add_argument('--rnn-cell-type', choices=CELL_TYPES, default='LSTM',
-                    help='type of RNN cell to use for inferring the clinical picture')
 parser.add_argument('--snapshot-encoder', choices=['RNN', 'CNN', 'BAG', 'DAN', 'DENSE'],
                     default='RNN', help='type of clinical snapshot encoder to use')
 
@@ -65,24 +74,30 @@ doc_encoder_cnn.add_argument('--snapshot-dan-num-hidden-obs', type=int, nargs='+
                              help='number of hidden units to use when refining clinical observation embeddings; '
                                   'multiple arguments results in multiple dense layers')
 
-parser.add_argument('--summary-dir', default='data/working/summaries')
-parser.add_argument('--checkpoint-dir', default='models/checkpoints')
+# CANTRIP: Clinical Picture Inference parameters
+parser.add_argument('--rnn-num-hidden', type=int, nargs='+', default=[100],
+                    help='size of hidden layer(s) used for inferring the clinical picture; '
+                         'multiple arguments result in multiple hidden layers')
+parser.add_argument('--rnn-cell-type', choices=CELL_TYPES, default='LSTM',
+                    help='type of RNN cell to use for inferring the clinical picture')
+
+# Experimental setting parameters
+parser.add_argument('--batch-size', type=int, default=40, help='batch size')
 parser.add_argument('--num-epochs', type=int, default='30', help='number of training epochs')
-parser.add_argument('--mode', choices=['TRAIN'], default='TRAIN',
-                    help='only works with TRAIN for now')
-parser.add_argument('--clear', default=False, action='store_true',
-                    help='remove previous summary/checkpoints before starting this run')
-parser.add_argument('--debug', default=None, help='hostname:port of TensorBoard debug server')
-parser.add_argument('--dropout', type=float, default=0., help='dropout used for all dropout layers'
-                                                              ' (including the vocabulary)')
+parser.add_argument('--tdt-ratio', default='8:1:1', help='training:development:testing ratio')
 parser.add_argument('--early-term', default=False, action='store_true', help='stop when F1 on dev set decreases; '
                                                                              'this is pretty much always a bad idea')
 
-parser.add_argument('--discrete-deltas', dest='delta_encoder', action='store_const',
-                    const=encode_delta_discrete, default=encode_delta_continuous,
-                    help='rather than encoding deltas as tanh(log(delta)), '
-                         'discretize them into buckets: > 1 day, > 2 days, > 1 week, etc.'
-                         '(we don\'t have enough data for this be useful)')
+# TensorFlow-specific settings
+parser.add_argument('--summary-dir', default='data/working/summaries')
+parser.add_argument('--checkpoint-dir', default='models/checkpoints')
+parser.add_argument('--clear', default=False, action='store_true',
+                    help='remove previous summary/checkpoints before starting this run')
+parser.add_argument('--debug', default=None, help='hostname:port of TensorBoard debug server')
+
+# I really need to break the file into separate training/testing/inference phases but there's always tomorrow
+parser.add_argument('--mode', choices=['TRAIN'], hidden=True, default='TRAIN',
+                    help=argparse.SUPPRESS)
 
 
 def make_train_devel_test_split(data: Iterable, ratio: str) -> (Iterable, Iterable, Iterable):

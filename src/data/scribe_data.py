@@ -379,7 +379,7 @@ class VisitBatch(object):
             seq_lens[i] = seq_end
             # print('Visit Docs:', visit.docs)
             for j, doc in enumerate(visit.docs[:seq_end]):
-                # print('Visit %d Doc %d:' % (i, j), doc)
+                # print('Visit %d Doc %d:' % (i, j), encoder)
                 doc_end = min(len(doc), max_doc_len)
                 docs[i, j, :doc_end] = doc[:doc_end]
                 doc_lens[i, j] = doc_end
