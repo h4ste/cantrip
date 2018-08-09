@@ -10,6 +10,7 @@ from tensorflow.python.platform import gfile
 
 from sklearn.model_selection import train_test_split
 from tqdm import trange, tqdm
+from tabulate import tabulate
 
 from src.data import Cohort, encode_delta_discrete, encode_delta_continuous
 from src.models import CANTRIPModel, CANTRIPOptimizer, CANTRIPSummarizer
@@ -76,11 +77,6 @@ parser.add_argument('--dropout', type=float, default=0., help='dropout used for 
                                                               ' (including the vocabulary)')
 parser.add_argument('--early-term', default=False, action='store_true', help='stop when F1 on dev set decreases; '
                                                                              'this is pretty much always a bad idea')
-parser.add_argument('--save-weights-to-file', default=None, help='if using RANv2 cell type, setting this option to '
-                                                                 'a file path will produce the 30 most/least important'
-                                                                 'clinical observations when predicting pneumonia as'
-                                                                 'measured by the RANv2 activations'
-                                                                 '(this is almost always completely useless)')
 
 parser.add_argument('--discrete-deltas', dest='delta_encoder', action='store_const',
                     const=encode_delta_discrete, default=encode_delta_continuous,
@@ -173,154 +169,152 @@ def run_model(model: CANTRIPModel, cohort: Cohort, args):
         # Initialize local variables (these are just used for computing average metrics)
         sess.run(tf.local_variables_initializer())
 
-        fetches = {'Logits': model.logits}
-        if args.save_weights_to_file:
-            fetches['RNN Weights'] = model.weights
-
+        # Create a progress logger to monitor training (this is a wrapped version of range()
         with trange(args.num_epochs, desc='Training') as train_log:
-            prev_train, prev_devel, prev_test = {}, {'F1': 0}, {}
-            best_weights = {}
+            # Save the training, development, and testing metrics for our best model (as measured by devel F1)
+            # I'm lazy so I initialize best_devel_metrics with a zero F1 so I can compare the first iteration to it
+            best_train_metrics, best_devel_metrics, best_test_metrics = {}, {'F1': 0}, {}
+            # Iterate over training epochs
             for i in train_log:
+                # Get global step and reset training metrics
                 global_step, _ = sess.run([optimizer.global_step, summarizer.train.reset_op])
-                if args.save_weights_to_file:
-                    weights = {}
-                    counts = {}
+                # Log our progress on the current epoch using tqdm cohort.make_epoch_batches shuffles the order of
+                # chronologies and prepares them  into mini-batches with zero-padding if needed
                 with tqdm(cohort[train].make_epoch_batches(**vars(args)), desc='Epoch %d' % (i + 1)) as batch_log:
+                    # Iterate over each batch
                     for j, batch in enumerate(batch_log):
-                        # if np.random.random() < 0.25:
-                        # batch.deltas = np.zeros_like(batch.deltas)
-                        _, batch_summary, batch_metrics, tensors, global_step = sess.run(
-                            [[optimizer.train_op, summarizer.train.metric_ops],
+                        # We train the model by evaluating the optimizer's training op. At the same time we update the
+                        # training metrics and get metrics/summaries for the current batch and request the new global
+                        # step number (used by TensorBoard to coordinate metrics across different runs
+                        _, batch_summary, batch_metrics, global_step = sess.run(
+                            [[optimizer.train_op, summarizer.train.metric_ops],  # All fetches we arent going to read
                              summarizer.batch_summary, summarizer.batch_metrics,
-                             fetches,
                              optimizer.global_step],
                             batch.feed(model))
+
+                        # Update tqdm progress indicator with current training metrics on this batch
                         batch_log.set_postfix(batch_metrics)
+
+                        # Save batch-level summaries
                         summary_writer.add_summary(batch_summary, global_step=global_step)
 
-                        if args.save_weights_to_file:
-                            for label, activations in zip(batch.labels, tensors['RNN Weights']):
-                                if label not in activations:
-                                    weights[label] = activations
-                                    counts[label] = 1
-                                else:
-                                    weights[label] = np.add(weights[label], activations)
-                                    counts[label] += 1
-
-                if args.save_weights_to_file:
-                    weights['ANY'] = (np.add(weights[0], weights[1]) / (counts[0] + counts[1]))
-                    for label in [1, 0]:
-                        weights[label] /= counts[label]
-                    best_weights = weights
-
+                # Save epoch-level training metrics and summaries
                 train_metrics, train_summary = sess.run([summarizer.train.metrics, summarizer.train.summary])
                 summary_writer.add_summary(train_summary, global_step=global_step)
 
-                # if (j + 1) % args.validate_every == 0:
+                # Evaluate development performance
                 sess.run(summarizer.devel.reset_op)
+                # Update local variables used to compute development metrics as we process each batch
                 for devel_batch in cohort[devel].make_epoch_batches(**vars(args)):
                     sess.run([summarizer.devel.metric_ops], devel_batch.feed(model))
+                # Compute the development metrics
                 devel_metrics, devel_summary = sess.run([summarizer.devel.metrics, summarizer.devel.summary])
+                # Update training progress bar to indicate current performance on development set
                 train_log.set_postfix(devel_metrics)
+                # Save TensorBoard summary
                 summary_writer.add_summary(devel_summary, global_step=global_step)
 
+                # Evaluate testing performance exactly as described above for development
                 sess.run(summarizer.test.reset_op)
                 for batch in cohort[test].make_epoch_batches(**vars(args)):
                     sess.run([summarizer.test.metrics, summarizer.test.metric_ops], batch.feed(model))
                 test_metrics, test_summary = sess.run([summarizer.test.metrics, summarizer.test.summary])
                 summary_writer.add_summary(test_summary, global_step=global_step)
 
-                if devel_metrics['F1'] > prev_devel['F1']:
-                    # if args.save_weights_to_file:
-                    #     for label in weights.keys():
-                    #         weights[label] /= counts[label]
-                    #     best_weights = weights
-                    prev_devel = devel_metrics
-                    prev_train = train_metrics
-                    prev_test = test_metrics
+                # If this run did better on the dev set, save it as the new best model
+                if devel_metrics['F1'] > best_devel_metrics['F1']:
+                    best_devel_metrics = devel_metrics
+                    best_train_metrics = train_metrics
+                    best_test_metrics = test_metrics
+                    # Save the model
                     saver.save(sess, model_checkpoint_dir, global_step=global_step)
                 elif args.early_term:
-                    tqdm.write('Early stop!')
+                    tqdm.write('Early termination!')
                     break
 
-        tqdm.write('Train: %s' % str(prev_train))
-        tqdm.write('Devel: %s' % str(prev_devel))
-        tqdm.write('Test: %s' % str(prev_test))
+        print('Training complete!')
 
-        tqdm.write(print_latex_performance(prev_train, prev_devel, prev_test))
+        if args.print_performance:
+            print('Train: %s' % str(best_train_metrics))
+            print('Devel: %s' % str(best_devel_metrics))
+            print('Test: %s' % str(best_test_metrics))
 
-        if args.save_weights_to_file:
-            if args.doc_encoder == 'BOW':
-                with open(args.save_weights_to_file, 'w') as weight_file:
-                    for label in [1, 0, 'ANY']:
-                        print('\nLabel: %s' % label, file=weight_file)
-                        print_feature_weights(cohort.vocabulary.terms, best_weights[label], weight_file)
+        if args.print_latex_results:
+            print_latex_results(best_train_metrics, best_devel_metrics, best_test_metrics)
 
 
-def print_latex_performance(train, devel, test):
-    def evaluate(dataset, metrics=None):
+def print_latex_results(train: dict, devel: dict, test: dict):
+    """
+    Prints results in a LaTeX-style table to the console
+    :param train: training metrics
+    :param devel: development metrics
+    :param test: testing metrics
+    :return: nothing
+    """
+
+    def _evaluate(dataset: dict, metrics=None):
+        """
+        Fetch the given metrics from the given dataset metric dictionary in the order they were given
+        :param dataset: dictionary containg metrics for a specific dataset
+        :param metrics: list of metric names to fetch
+        :return: list of metric values
+        """
         if metrics is None:
             metrics = ['Accuracy', 'Precision', 'Recall', 'F1', 'AUROC']
-        return [dataset[metric] for  metric in metrics]
+        return [dataset[metric] for metric in metrics]
 
-    from tabulate import tabulate
-
-    table = tabulate([evaluate(train),
-                      evaluate(devel),
-                      evaluate(test)],
+    # Create a LaTeX table using tabulate
+    table = tabulate([_evaluate(train),
+                      _evaluate(devel),
+                      _evaluate(test)],
                      headers=['Acc.', 'P', 'R', 'F1', 'AUC'],
                      tablefmt='latex')
-    return table
 
-
-def print_feature_weights(vocabulary, weights, file=None):
-    weighted_terms = zip(vocabulary,  weights)
-    sorted_terms = sorted(weighted_terms, key=lambda t: t[1], reverse=True)
-    print('Rank\tObservation\tImportance', file=file)
-    for i, (term, weight) in enumerate(sorted_terms[:30]):
-        print('%d\t%s\t%f' % (i + 1, term, weight), file=file)
-    print('...\t...\t...', file=file)
-    for i, (term, weight) in enumerate(sorted_terms[-30:]):
-        print('%d\t%s\t%f' % (len(sorted_terms) - 29 + i, term, weight), file=file)
+    print(table)
 
 
 def main(argv):
+    """
+    Main method for the script. Parses arguments and calls run_model.
+    :param argv: comandline arguments
+    """
     args = parser.parse_args(argv[1:])
 
+    # Load cohort
     cohort = Cohort.from_chronologies(args.chronology_path, args.vocabulary_path, args.vocabulary_size)
+
+    # Compute vocabulary size (it may be smaller than args.vocabulary_size)
     vocabulary_size = len(cohort.vocabulary)
 
-    embedding_size = args.word_embedding_size
-    if args.doc_encoder == 'RNN':
-        doc_encoder = rnn_encoder(args.doc_rnn_num_hidden)
-    elif args.doc_encoder == 'CNN':
-        doc_encoder = cnn_encoder(args.doc_cnn_grams, args.doc_cnn_num_filters, args.dropout)
-    elif args.doc_encoder == 'BOW':
-        doc_encoder = bow_encoder
-        embedding_size = vocabulary_size
-    elif args.doc_encoder == 'DENSE':
-        doc_encoder = dense_encoder
-    elif args.doc_encoder == 'DAN':
-        doc_encoder = dan_encoder(args.doc_dan_num_hidden_word, args.doc_dan_num_hidden_avg)
-    else:
-        raise ValueError('Given illegal document encoder %s' % args.doc_encoder)
+    # The embedding size is the same as the word embedding size unless using the BAG encoder
+    observation_embedding_size = args.word_embedding_size
 
-    if args.delta_encoder == encode_delta_discrete:
-        delta_encoding_size = len(_DELTA_BUCKETS)
+    # Parse snapshot-encoder-specific arguments
+    if args.snapshot_encoder == 'RNN':
+        snapshot_encoder = rnn_encoder(args.snapshot_rnn_num_hidden)
+    elif args.snapshot_encoder == 'CNN':
+        snapshot_encoder = cnn_encoder(args.snapshot_cnn_windows, args.snapshot_cnn_num_kernels, args.dropout)
+    elif args.snapshot_encoder == 'BAG':
+        snapshot_encoder = bow_encoder
+        observation_embedding_size = vocabulary_size
+    elif args.snapshot_encoder == 'DENSE':
+        snapshot_encoder = dense_encoder
+    elif args.snapshot_encoder == 'DAN':
+        snapshot_encoder = dan_encoder(args.snapshot_dan_num_hidden_obs, args.snapshot_dan_num_hidden_avg)
     else:
-        delta_encoding_size = 1
+        raise ValueError('Given illegal snapshot encoder %s' % args.doc_encoder)
 
     model = CANTRIPModel(max_seq_len=args.max_seq_len,
                          max_doc_len=args.max_doc_len,
                          vocabulary_size=vocabulary_size,
-                         embedding_size=embedding_size,
+                         embedding_size=observation_embedding_size,
                          num_hidden=args.num_hidden,
                          cell_type=args.cell_type,
                          batch_size=args.batch_size,
-                         doc_embedding=doc_encoder,
+                         doc_embedding=snapshot_encoder,
                          dropout=args.dropout,
                          num_classes=2,
-                         delta_encoding_size=delta_encoding_size)
+                         delta_encoding_size=args.delta_encoder.size)
 
     if args.mode == 'TRAIN':
         run_model(model, cohort, args)
