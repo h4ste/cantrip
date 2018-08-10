@@ -78,7 +78,7 @@ def run_model(model, args):
     """
 
     # Load cohort
-    cohort = Cohort.from_chronologies(args.chronology_path, args.vocabulary_path, args.vocabulary_size)
+    cohort = Cohort.from_disk(args.chronology_path, args.vocabulary_path, args.vocabulary_size)
     # Balance training data
     cohort = cohort.balance_chronologies()
     # Create training:development:testing split

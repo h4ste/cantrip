@@ -296,7 +296,7 @@ def main(argv):
     args = parser.parse_args(argv[1:])
 
     # Load cohort
-    cohort = Cohort.from_chronologies(args.chronology_path, args.vocabulary_path, args.vocabulary_size)
+    cohort = Cohort.from_disk(args.chronology_path, args.vocabulary_path, args.vocabulary_size)
 
     # Compute vocabulary size (it may be smaller than args.vocabulary_size)
     vocabulary_size = len(cohort.vocabulary)
