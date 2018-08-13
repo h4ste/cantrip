@@ -2,8 +2,6 @@ import tensorflow as tf
 
 from tensorflow.nn.rnn_cell import LSTMStateTuple, MultiRNNCell
 
-from src.models.ran import RANStateTuple
-
 
 def create_embeddings(vocab_size, embedding_size, dropout):
     embeddings = tf.get_variable("embeddings", [vocab_size, embedding_size])
@@ -27,7 +25,7 @@ def dense_to_sparse(tensor):
     return tf.SparseTensor(indices, values, dense_shape=shape)
 
 
-def rnn_layer(cell_fn, num_hidden, inputs, lengths, return_input_weights=False):
+def rnn_layer(cell_fn, num_hidden, inputs, lengths):
     # Check if we were given a list of hidden units
     stacked = isinstance(num_hidden, list)
 
@@ -41,6 +39,7 @@ def rnn_layer(cell_fn, num_hidden, inputs, lengths, return_input_weights=False):
     state = cell.zero_state([inputs.shape[0]], tf.float32)
 
     # Run dynamic RNN; discard all outputs except final state
+    # noinspection PyUnresolvedReferences
     output, state = tf.nn.dynamic_rnn(cell=cell, inputs=inputs, sequence_length=lengths, initial_state=state,
                                       swap_memory=True)
 
@@ -48,19 +47,10 @@ def rnn_layer(cell_fn, num_hidden, inputs, lengths, return_input_weights=False):
     if stacked:
         state = state[-1]
 
-    if not isinstance(state, RANStateTuple) and return_input_weights:
-        return ValueError('can only return input weights from RANv2 cells')
-
     # The final state of a dynamic RNN, in TensorFlow, is either
-    # (1) an LSTMStateTuple containing the final output and final memory state,
-    # (2) a special RANStateTuple we created n src.models.ran
-    # (3) just the final state output
+    # (1) an LSTMStateTuple containing the final output and final memory state, or
+    # (2) just the final state output
     if isinstance(state, LSTMStateTuple):
         return state.h
-    elif isinstance(state, RANStateTuple):
-        if return_input_weights:
-            return state.h, state.w
-        else:
-            return state.h
     else:
         return state

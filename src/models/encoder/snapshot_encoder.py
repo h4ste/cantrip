@@ -1,12 +1,15 @@
+""" Clinical snapshot encoders for use with CANTRIP Model.
+
+CANTRIPModel expects a clinical snapshot encoder function which takes as input the CANTRIPModel and adds
+clinical snapshot encoding ops to the graph returning the final clinical snapshot encoding as
+[batch x max_seq_len x embedding_size]
+
+"""
+
 import tensorflow as tf
 from tensorflow.nn.rnn_cell import GRUCell
 
 from src.models.layers import rnn_layer, embedding_layer, create_embeddings
-
-""" CANTRIPModel expects a clinical snapshot encoder function which takes as input the CANTRIPModel and adds
-    clinical snapshot encoding ops to the graph returning the final clinical snapshot encoding as
-    [batch x max_seq_len x embedding_size]
-"""
 
 
 def rnn_encoder(num_hidden, cell_fn=GRUCell):
@@ -161,7 +164,7 @@ def dense_encoder(model):
                           name='doc_embeddings')
 
 
-def bow_encoder(model):
+def bag_encoder(model):
     """
     Represents snapshots as a bag of clinical observations. Specifically, returns a V-length
     binary vector such that the v-th index is 1 iff the v-th observation occurs in the given snapshot

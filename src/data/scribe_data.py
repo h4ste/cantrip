@@ -1,19 +1,29 @@
+"""Contains classes and methods for parsing and representing chronologies.
+
+Attributes:
+    _UNK (str): Module level private-variable containing the unknown token symbol
+    DELTA_BUCKETS (List[int]): list of temporal windows (in days) used for discrete delta encoding
+
+Todo: Find a better way to represent delta encoder range dimensionality
+"""
+
+
 from collections import Iterable
+from typing import Optional, Dict, Union, List
 
 import numpy as np
-
 from tqdm import tqdm
 
-# Symbol used to denote unknown or out-of-vocabulary words
-from models import CANTRIPModel
+from src.models import CANTRIPModel
 
+# Symbol used to denote unknown or out-of-vocabulary words
 _UNK = 'UNK'
 
 # Discrete time windows used when discretizing deltas (windows defined in days since prev. snapshot)
-_DELTA_BUCKETS = [1, 7, 30, 60, 90, 182, 365, 730]
+DELTA_BUCKETS = [1, 7, 30, 60, 90, 182, 365, 730]
 
 
-def encode_delta_discrete(elapsed_seconds):
+def encode_delta_discrete(elapsed_seconds: int):
     """Encode deltas into discrete buckets indicating:
         1. if elapsed_days <= 1 day
         2. if elapsed_days <= 1 week
@@ -27,23 +37,23 @@ def encode_delta_discrete(elapsed_seconds):
     :param elapsed_seconds: number of seconds between this clinical snapshot and the previous
     :return: 8-dimensional discrete binary representation of elapsed_seconds
     """
-    def _encode_delta_disrete(elapsed_seconds_):
+    def _encode_delta_discrete(elapsed_seconds_: int) -> List[int]:
         elapsed_days = elapsed_seconds_ / 60 / 60 / 24
-        return [1 if elapsed_days <= bucket else 0 for bucket in _DELTA_BUCKETS]
+        return [1 if elapsed_days <= bucket else 0 for bucket in DELTA_BUCKETS]
 
     # We use the size parameter to denote how many dimensions this delta encoding will have
-    _encode_delta_disrete.size = len(_DELTA_BUCKETS)
+    _encode_delta_discrete.size = len(DELTA_BUCKETS)
 
-    return _encode_delta_disrete
+    return _encode_delta_discrete
 
 
-def encode_delta_continuous(elapsed_seconds):
+def encode_delta_continuous(elapsed_seconds: int):
     """Encode deltas into discrete buckets
 
     :param elapsed_seconds:
     :return:
     """
-    def _encode_delta_continuous(elapsed_seconds_):
+    def _encode_delta_continuous(elapsed_seconds_: int) -> int:
         elapsed_days = elapsed_seconds_ / 60 / 60 / 24
         return np.tanh(np.log(elapsed_days + 1))
 
@@ -63,11 +73,15 @@ class Vocabulary(object):
         term_frequencies (list): a list mapping term IDs to term frequencies
     """
 
-    def __init__(self, term_index=None, term_frequencies=None, terms=None, return_unk=True):
+    def __init__(self,
+                 term_index: Optional[Dict[str, int]] = None,
+                 term_frequencies: Optional[Union[Dict[str, int], Iterable[int]]] = None,
+                 terms: Optional[Iterable[int]] = None,
+                 return_unk: Optional[bool] = True):
         """Creates a vocabulary from a given term_index, term_frequency and term list
 
         :param term_index (dict, optional): dictionary mapping terms to integer term ids
-            (term ids must start from zero and be continguous)
+            (term ids must start from zero and be contiguous)
         :param term_frequencies: a dict or list associating each term with its frequency. If passed as a dict,
             each key must be a term and each value must be a positive integer indicating the frequency of that term.
             If passed as a list,  each entry in the list is assumed to be a positive integer indicating the frequency
@@ -99,7 +113,11 @@ class Vocabulary(object):
         self.return_unk = return_unk
 
     @classmethod
-    def from_tsv(cls, vocabulary_file, add_unk=True, return_unk=True, max_vocab_size=None):
+    def from_tsv(cls,
+                 vocabulary_file: str,
+                 add_unk: bool = True,
+                 return_unk: bool = True,
+                 max_vocab_size: Optional[int] =None):
         """Loads a Vocabulary object from a given vocabulary TSV file path.
 
         The TSV file is assumed to be formatted as follows:
@@ -140,7 +158,11 @@ class Vocabulary(object):
         return cls(term_index, term_frequencies, terms, return_unk=return_unk)
 
     @classmethod
-    def from_terms(cls, terms, add_unk=True, return_unk=True, max_vocab_size=None):
+    def from_terms(cls,
+                   terms: Iterable[str],
+                   add_unk: bool = True,
+                   return_unk: bool = True,
+                   max_vocab_size: Optional[int] = None):
         """Creates a vocabulary from an iterable of (possibly duplicate) terms.
 
         Unlike from_tsv, if max_vocab_size is specified the vocabulary will be created from the first max_vocab_size
@@ -176,7 +198,7 @@ class Vocabulary(object):
 
         return cls(term_index, term_frequencies, terms, return_unk=return_unk)
 
-    def encode_term(self, term):
+    def encode_term(self, term: str):
         """Encode the given term using this vocabulary.
         Terms included in this vocabulary will be returned as-is. Out-of-vocabulary terms will be returned as the
         unknown term symbol if this Vocabulary was created with  return_unk=True. Otherwise, encoding out-of-vocabulary
@@ -192,7 +214,7 @@ class Vocabulary(object):
         else:
             raise KeyError('Term \'' + term + '\' not found in vocabulary')
 
-    def encode_term_id(self, term_id):
+    def encode_term_id(self, term_id: int):
         """Encode the given term ID using this vocabulary.
         Term IDs included in this vocabulary will be returned as-is. Out-of-vocabulary term iss will be returned as the
         unknown term symbol ID (0) if this Vocabulary was created with return_unk=True. Otherwise, encoding
@@ -208,7 +230,7 @@ class Vocabulary(object):
         else:
             raise KeyError('Term ID ' + term_id + ' not valid for vocabulary')
 
-    def lookup_term_by_term_id(self, term_id):
+    def lookup_term_by_term_id(self, term_id: int):
         """Look-up term by term by given term ID.
         Raises KeyException for invalid term IDs.
         :param term_id: ID of term to lookup
@@ -216,7 +238,7 @@ class Vocabulary(object):
         """
         return self.terms[term_id]
 
-    def lookup_term_id_by_term(self, term):
+    def lookup_term_id_by_term(self, term: str) -> Union[int, KeyError]:
         """Look-up term by term ID for given term.
         Returns unknown term symbol if this vocabulary was created with return_unk=True, otherwise raises KeyError
         :param term: term to lookup
@@ -227,7 +249,7 @@ class Vocabulary(object):
         else:
             return self.term_index[term]
 
-    def add_term(self, term):
+    def add_term(self, term: str) -> int:
         """Adds the given term to this vocabulary and returns its ID.
         If the given term is already in this vocabulary, its frequency will be updated. This method ignores any
         maximum_vocabulary_size given when creating the vocabulary.

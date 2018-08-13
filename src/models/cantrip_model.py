@@ -1,38 +1,33 @@
+from typing import Union, List, Callable
+
 import tensorflow as tf
 from tensorflow.contrib.rnn import LayerNormBasicLSTMCell
 from tensorflow.nn.rnn_cell import BasicLSTMCell, GRUCell
 
-from src.data.scribe_data import _DELTA_BUCKETS
-from src.models.encoder.snapshot_encoder import rnn_encoder
 from src.models.layers import rnn_layer
-from src.models.ran.ran_cell import RANCell, RANCellv2
-from src.models.rnn_cells import LayerNormGRUCell
+from src.models.rnn_cell import SimpleRANCell, RANCell, LayerNormGRUCell
 
-CELL_TYPES = ['LRAN', 'RAN', 'RANv2', 'LSTM', 'LSTM-LN', 'GRU', 'GRU-LN', 'RAN-LN', 'RANv2-LN']
-
-
-def CANTRIP(**params):
-    model = CANTRIPModel(**params)
-    optimizer = CANTRIPOptimizer(model)
-    summarizer = CANTRIPSummarizer(model, optimizer)
-    return model, optimizer, summarizer
+CELL_TYPES = ['SRAN', 'RAN', 'RAN-LN', 'LSTM', 'LSTM-LN', 'GRU', 'GRU-LN']
 
 
 class CANTRIPModel(object):
 
-    def __init__(self, max_seq_len, max_doc_len,
-                 vocabulary_size, embedding_size,
-                 num_hidden,
-                 cell_type,
-                 batch_size,
-                 doc_embedding=rnn_encoder(1),
-                 dropout=0,
-                 num_classes=2,
-                 delta_encoding_size=len(_DELTA_BUCKETS)):
+    def __init__(self,
+                 max_seq_len: int,
+                 max_snapshot_size: int,
+                 vocabulary_size: int,
+                 observation_embedding_size: int,
+                 delta_encoding_size: int,
+                 num_hidden: Union[int, List[int]],
+                 cell_type: str,
+                 batch_size: int,
+                 snapshot_encoder: Callable[['CANTRIPModel'], tf.Tensor],
+                 dropout: float = 0.,
+                 num_classes: int = 2):
         self.max_seq_len = max_seq_len
-        self.max_doc_len = max_doc_len
+        self.max_snapshot_size = max_snapshot_size
         self.vocabulary_size = vocabulary_size
-        self.embedding_size = embedding_size
+        self.embedding_size = observation_embedding_size
         self.num_hidden = num_hidden
         self.batch_size = batch_size
         self.num_classes = num_classes
@@ -45,12 +40,7 @@ class CANTRIPModel(object):
             'RAN': RANCell,
             'RAN-LN': lambda num_cells: RANCell(num_cells, normalize=True),
             # Super secret simplified RAN variant from https://arxiv.org/abs/1705.07393
-            'RANv2': lambda num_cells: RANCellv2(num_cells, self.embedding_size + self.delta_encoding_size),
-            'RANv2-LN': lambda num_cells: RANCellv2(num_cells, self.embedding_size + delta_encoding_size,
-                                                    normalize=True),
-            # Super duper secret linear version of simplified RAN
-            'LRAN': lambda num_cells: RANCellv2(num_cells, self.embedding_size + self.delta_encoding_size,
-                                                activation=None),
+            'SRAN': SimpleRANCell,
             'LSTM': BasicLSTMCell,
             'LSTM-LN': LayerNormBasicLSTMCell,
             'GRU': GRUCell,
@@ -64,14 +54,14 @@ class CANTRIPModel(object):
 
         # Build graph
         self._add_placeholders()
-        with tf.variable_scope('doc_embedding'):
-            self.doc_embeddings = doc_embedding(self)
+        with tf.variable_scope('snapshot_encoder'):
+            self.snapshot_encodings = snapshot_encoder(self)
         self._add_seq_rnn()
         self._add_postprocessing()
 
     def _add_placeholders(self):
         # Word IDs
-        self.observations = tf.placeholder(tf.int32, [self.batch_size, self.max_seq_len, self.max_doc_len],
+        self.observations = tf.placeholder(tf.int32, [self.batch_size, self.max_seq_len, self.max_snapshot_size],
                                            name="observations")
 
         # Elapsed time deltas
@@ -94,19 +84,14 @@ class CANTRIPModel(object):
                 self.deltas = tf.nn.dropout(self.deltas, keep_prob=self.dropout)
 
             # Concat observation_t and delta_t (deltas are already shifted by one)
-            self.x = tf.concat([self.doc_embeddings, self.deltas], axis=-1, name='rnn_input_concat')
+            self.x = tf.concat([self.snapshot_encodings, self.deltas], axis=-1, name='rnn_input_concat')
 
             # Add dropout on concatenated inputs
             if self.dropout > 0:
                 self.x = tf.nn.dropout(self.x, 1 - self.dropout)
 
             # Compute weights AND final RNN output if looking at RANv2 variants
-            if self.cell_type in ['RANv2', 'RANv2-LN', 'LRAN']:
-                self.seq_final_output, self.weights = rnn_layer(self.cell_fn, self.num_hidden, self.x,
-                                                                self.seq_lengths, return_input_weights=True)
-            else:
-                # Just compute final RNN output
-                self.seq_final_output = rnn_layer(self.cell_fn, self.num_hidden, self.x, self.seq_lengths)
+            self.seq_final_output = rnn_layer(self.cell_fn, self.num_hidden, self.x, self.seq_lengths)
 
             # Even more fun dropout
             if self.dropout > 0:
@@ -123,10 +108,10 @@ class CANTRIPModel(object):
 
 class CANTRIPOptimizer(object):
 
-    def __init__(self, model, sparse=False, learning_rate=1e-3):
+    def __init__(self, model: CANTRIPModel, sparse: bool = False, learning_rate: float = 1e-3):
         """
-        Creates a new CANTRIPOptimizer responsible for optimizing CANTRIP. Allegedly, some day I will get around to looking at
-        other optimization strategies (e.g., sequence optimization).
+        Creates a new CANTRIPOptimizer responsible for optimizing CANTRIP. Allegedly, some day I will get around to
+        looking at other optimization strategies (e.g., sequence optimization).
         :param model: a CANTRIPModel object
         :param sparse: whether to use sparse softmax or not (I never actually tested this)
         :param learning_rate: float, learning rate of the optimizer
@@ -150,7 +135,7 @@ class CANTRIPOptimizer(object):
 
 class CANTRIPSummarizer(object):
 
-    def __init__(self, model, optimizer):
+    def __init__(self, model: CANTRIPModel, optimizer: CANTRIPOptimizer):
         self.model = model
         self.optimizer = optimizer
 
@@ -200,13 +185,14 @@ class CANTRIPSummarizer(object):
 
 class _CANTRIPModeSummarizer(object):
 
-    def __init__(self, mode, model):
+    def __init__(self, mode: str, model: CANTRIPModel):
         self.mode = mode
         with tf.name_scope(mode) as scope:
             # Streaming, epoch-level metrics
             acc, acc_op = tf.metrics.accuracy(model.labels, model.y)
             auroc, auroc_op = tf.metrics.auc(model.labels, model.y, summation_method='careful_interpolation')
-            auprc, auprc_op = tf.metrics.auc(model.labels, model.y, curve='PR', summation_method='careful_interpolation')
+            auprc, auprc_op = tf.metrics.auc(model.labels, model.y, curve='PR',
+                                             summation_method='careful_interpolation')
             p, p_op = tf.metrics.precision(model.labels, model.y)
             r, r_op = tf.metrics.recall(model.labels, model.y)
             f1 = 2 * p * r / (p + r)
@@ -250,16 +236,6 @@ class _CANTRIPModeSummarizer(object):
             self.metric_ops = [acc_op, auroc_op, auprc_op, p_op, r_op,
                                [tp_op, tn_op, fp_op, fn_op]]
 
-            # Allow RNN weights to be collected if training and using a RANv2 variant
-            if mode == 'train' and model.cell_type in ['RANv2', 'RANv2-LN', 'LRAN']:
-                rnn_weights, rnn_weights_op = tf.metrics.mean_tensor(tf.reduce_mean(model.weights, axis=0))
-                self.rnn_weights = rnn_weights
-                self.metric_ops.append(rnn_weights_op)
-
             # Operation to reset metrics after each epoch
             metric_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope=scope)
             self.reset_op = tf.variables_initializer(var_list=metric_vars)
-
-
-
-

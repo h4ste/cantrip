@@ -1,3 +1,5 @@
+tabulate
+numpy
 scikit-learn
 tqdm
 tensorflow-gpu

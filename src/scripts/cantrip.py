@@ -15,7 +15,7 @@ from tabulate import tabulate
 from src.data import Cohort, encode_delta_discrete, encode_delta_continuous
 from src.models import CANTRIPModel, CANTRIPOptimizer, CANTRIPSummarizer
 from src.models.cantrip_model import CELL_TYPES
-from src.models.encoder import rnn_encoder, cnn_encoder, bow_encoder, dan_encoder, dense_encoder
+from src.models.encoder import rnn_encoder, cnn_encoder, bag_encoder, dan_encoder, dense_encoder
 from src.models.util import make_dirs_quiet, delete_dir_quiet
 
 np.random.seed(1337)
@@ -45,8 +45,10 @@ parser.add_argument('--dropout', type=float, default=0., help='dropout used for 
                                                               ' (including the vocabulary)')
 
 # CANTRIP: Clinical Snapshot Encoder parameters
-parser.add_argument('--observation-embedding-size', type=int, default=200, help="dimensions of observation embedding vectors")
-parser.add_argument('--snapshot-embedding-size', type=int, default=200, help="dimensions of clinical snapshot encoding vectors")
+parser.add_argument('--observation-embedding-size', type=int, default=200,
+                    help="dimensions of observation embedding vectors")
+parser.add_argument('--snapshot-embedding-size', type=int, default=200,
+                    help="dimensions of clinical snapshot encoding vectors")
 parser.add_argument('--snapshot-encoder', choices=['RNN', 'CNN', 'BAG', 'DAN', 'DENSE'],
                     default='RNN', help='type of clinical snapshot encoder to use')
 
@@ -95,9 +97,8 @@ parser.add_argument('--clear', default=False, action='store_true',
                     help='remove previous summary/checkpoints before starting this run')
 parser.add_argument('--debug', default=None, help='hostname:port of TensorBoard debug server')
 
-# I really need to break the file into separate training/testing/inference phases but there's always tomorrow
-parser.add_argument('--mode', choices=['TRAIN'], hidden=True, default='TRAIN',
-                    help=argparse.SUPPRESS)
+# TODO: break the file into separate training/testing/inference phases
+parser.add_argument('--mode', choices=['TRAIN'], default='TRAIN', help=argparse.SUPPRESS)
 
 
 def make_train_devel_test_split(data: Iterable, ratio: str) -> (Iterable, Iterable, Iterable):
@@ -259,8 +260,8 @@ def run_model(model: CANTRIPModel, cohort: Cohort, args):
 
 
 def print_latex_results(train: dict, devel: dict, test: dict):
-    """
-    Prints results in a LaTeX-style table to the console
+    """Prints results in a LaTeX-style table to the console
+
     :param train: training metrics
     :param devel: development metrics
     :param test: testing metrics
@@ -291,7 +292,7 @@ def print_latex_results(train: dict, devel: dict, test: dict):
 def main(argv):
     """
     Main method for the script. Parses arguments and calls run_model.
-    :param argv: comandline arguments
+    :param argv: commandline arguments
     """
     args = parser.parse_args(argv[1:])
 
@@ -310,7 +311,7 @@ def main(argv):
     elif args.snapshot_encoder == 'CNN':
         snapshot_encoder = cnn_encoder(args.snapshot_cnn_windows, args.snapshot_cnn_num_kernels, args.dropout)
     elif args.snapshot_encoder == 'BAG':
-        snapshot_encoder = bow_encoder
+        snapshot_encoder = bag_encoder
         observation_embedding_size = vocabulary_size
     elif args.snapshot_encoder == 'DENSE':
         snapshot_encoder = dense_encoder
@@ -320,13 +321,13 @@ def main(argv):
         raise ValueError('Given illegal snapshot encoder %s' % args.doc_encoder)
 
     model = CANTRIPModel(max_seq_len=args.max_seq_len,
-                         max_doc_len=args.max_doc_len,
+                         max_snapshot_size=args.max_doc_len,
                          vocabulary_size=vocabulary_size,
-                         embedding_size=observation_embedding_size,
+                         observation_embedding_size=observation_embedding_size,
                          num_hidden=args.num_hidden,
                          cell_type=args.cell_type,
                          batch_size=args.batch_size,
-                         doc_embedding=snapshot_encoder,
+                         snapshot_encoder=snapshot_encoder,
                          dropout=args.dropout,
                          num_classes=2,
                          delta_encoding_size=args.delta_encoder.size)

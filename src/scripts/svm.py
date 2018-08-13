@@ -1,14 +1,11 @@
 import argparse
 
 import numpy as np
-from sklearn.dummy import DummyClassifier
 from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score, roc_auc_score
-from sklearn.svm import SVC
+from sklearn import svm
 
 from src.data import Cohort
 from src.scripts.cantrip import make_train_devel_test_split
-
-# noinspection PyProtectedMember
 
 np.random.seed(1337)
 
@@ -94,8 +91,12 @@ def run_model(model, args):
 
 
 def main():
+    """
+    Main method for the script. Parses arguments and calls run_model.
+    """
     args = parser.parse_args()
-    model = SVC(verbose=1, kernel=args.kernel)
+    model = svm.SVC(verbose=1, kernel=args.kernel)
+    # noinspection PyTypeChecker
     run_model(model, args)
 
 

@@ -1,4 +1,5 @@
-import collections
+"""Recurrent Additive Network memory cell implementations.
+"""
 
 import tensorflow as tf
 from tensorflow.python.ops import array_ops
@@ -6,7 +7,7 @@ from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import nn_ops
 from tensorflow.python.ops import variable_scope as vs
-from tensorflow.python.ops.rnn_cell_impl import RNNCell
+from tensorflow.python.ops.rnn_cell_impl import RNNCell, LSTMStateTuple
 from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.util import nest
 
@@ -91,32 +92,16 @@ def _linear(args,
     return nn_ops.bias_add(res, biases)
 
 
-_RANStateTuple = collections.namedtuple('RANStateTuple', ('h', 'c', 'w'))
-
-
-class RANStateTuple(_RANStateTuple):
-    __slots__ = ()
-
-
-    @property
-    def dtype(self):
-        (c, h) = self
-        if c.dtype != h.dtype:
-            raise TypeError("Inconsistent internal state: %s vs %s" %
-                            (str(c.dtype), str(h.dtype)))
-        return c.dtype
-
-
 # noinspection PyAbstractClass,PyMissingConstructor
-class RANCell(RNNCell):
-    """Recurrent Additive Networks (cf. https://arxiv.org/abs/1705.07393)."""
+class SimpleRANCell(RNNCell):
+    """Recurrent Additive Networks (cf. https://arxiv.org/abs/1705.07393).
 
-    def __init__(self, num_units, input_size=None, activation=math_ops.tanh, normalize=False, reuse=None):
+    This is an implementation of the simplified RAN cell described in Equation group (2)."""
+
+    def __init__(self, num_units, input_size=None, reuse=None):
         if input_size is not None:
             logging.warn("%s: The input_size parameter is deprecated.", self)
         self._num_units = num_units
-        self._activation = activation
-        self._normalize = normalize
         self._reuse = reuse
 
     @property
@@ -133,21 +118,23 @@ class RANCell(RNNCell):
                 value = tf.nn.sigmoid(_linear([state, inputs], 2 * self._num_units, True, normalize=self._normalize))
                 i, f = array_ops.split(value=value, num_or_size_splits=2, axis=1)
 
-            with vs.variable_scope("candidate"):
-                c = _linear([inputs], self._num_units, True, normalize=self._normalize)
+            new_c = i * inputs + f * state
 
-            new_c = i * c + f * state
-            new_h = self._activation(c)
+        return new_c, new_c
 
-        return new_h, new_c
+
+class RANStateTuple(LSTMStateTuple):
+    pass
 
 
 # noinspection PyAbstractClass,PyMissingConstructor
-class RANCellv2(RNNCell):
-    """Recurrent Additive Networks (cf. https://arxiv.org/abs/1705.07393)."""
+class RANCell(RNNCell):
+    """Recurrent Additive Networks (cf. https://arxiv.org/abs/1705.07393)
 
-    def __init__(self, num_units, input_size, activation=math_ops.tanh, normalize=False, reuse=None):
-        self._input_size = input_size
+    This is an implementation of the standard RAN cell described in Equation group (1)."""
+    def __init__(self, num_units, input_size=None, activation=math_ops.tanh, normalize=False, reuse=None):
+        if input_size is not None:
+            logging.warn("%s: The input_size parameter is deprecated.", self)
         self._num_units = num_units
         self._activation = activation
         self._normalize = normalize
@@ -155,7 +142,7 @@ class RANCellv2(RNNCell):
 
     @property
     def state_size(self):
-        return RANStateTuple(self._num_units, self.output_size, self._input_size)
+        return RANStateTuple(self._num_units, self.output_size)
 
     @property
     def output_size(self):
@@ -168,50 +155,16 @@ class RANCellv2(RNNCell):
                 gates = tf.nn.sigmoid(_linear([inputs, h], 2 * self._num_units, True, normalize=self._normalize))
                 i, f = array_ops.split(value=gates, num_or_size_splits=2, axis=1)
 
-            with vs.variable_scope("candidate") as scope:
+            with vs.variable_scope("content"):
                 content = _linear([inputs], self._num_units, True, normalize=self._normalize)
-                scope.reuse_variables()
-                weights = tf.get_variable('kernel')
 
             new_c = i * content + f * c
 
             if self._activation:
-                new_h = self._activation(c)
+                new_h = self._activation(new_c)
             else:
                 new_h = c
 
-            component_weights = tf.matmul((new_c / content), tf.transpose(weights))
-            new_state = RANStateTuple(new_c, new_h, component_weights)
-            output = new_h
-        return output, new_state
-
-
-class RANCellv3(RNNCell):
-    """Recurrent Additive Networks (cf. https://arxiv.org/abs/1705.07393)."""
-
-    def __init__(self, input_size, reuse=None):
-        self._input_size = input_size
-        self._reuse = reuse
-
-    @property
-    def state_size(self):
-        return RANStateTuple(self._input_size, self._input_size, self._input_size)
-
-    @property
-    def output_size(self):
-        return self._input_size
-
-    def __call__(self, inputs, state, scope=None):
-        with vs.variable_scope(scope or "ran_cell", reuse=self._reuse):
-            with vs.variable_scope("gates"):
-                c, h, w = state
-                gates = tf.nn.sigmoid(_linear([inputs, h], 2 * self._input_size, True))
-                i, f = array_ops.split(value=gates, num_or_size_splits=2, axis=1)
-
-            new_c = i * inputs + f * c
-            new_h = new_c
-
-            component_weights = new_c / inputs
-            new_state = RANStateTuple(new_c, new_h, component_weights)
+            new_state = RANStateTuple(new_c, new_h)
             output = new_h
         return output, new_state
