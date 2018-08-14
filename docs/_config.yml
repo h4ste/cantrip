@@ -1,4 +1,4 @@
-theme: jekyll-theme-cayman
+theme: jekyll-theme-minimal
 title: CANTRIP
 description: reCurrent Additive Networks for Temporal RIsk Prediction
 show_downloads: true
