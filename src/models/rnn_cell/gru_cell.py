@@ -26,7 +26,7 @@ class LayerNormGRUCell(tf.contrib.rnn.RNNCell):
     def output_size(self):
         return self._size
 
-    def call(self, input_, state):
+    def __call__(self, input_, state):
         update, reset = tf.split(self._forward(
             'update_reset', [state, input_], 2 * self._size, tf.nn.sigmoid,
             bias_initializer=tf.constant_initializer(-1.)), 2, 1)

@@ -30,9 +30,9 @@ parser.add_argument('--vocabulary-path', required=True, help='path to cohort voc
 # Chronology datastructure parameters
 parser.add_argument('--max-chron-len', type=int, default=7, metavar='L',
                     help='maximum number of snapshots per chronology')
-parser.add_argument('--max-snap-len', type=int, default=200, metavar='N',
+parser.add_argument('--max-snapshot-size', type=int, default=200, metavar='N',
                     help='maximum number of observations to consider per snapshot')
-parser.add_argument('--vocabulary-size', type=int, default=50_000, metavar='V',
+parser.add_argument('--vocabulary-size', type=int, default=50000, metavar='V',
                     help='maximum vocabulary size, only the top V occurring terms will be used')
 parser.add_argument('--discrete-deltas', dest='delta_encoder', action='store_const',
                     const=encode_delta_discrete, default=encode_delta_continuous,
@@ -85,7 +85,7 @@ parser.add_argument('--rnn-cell-type', choices=CELL_TYPES, default='LSTM',
 
 # Experimental setting parameters
 parser.add_argument('--batch-size', type=int, default=40, help='batch size')
-parser.add_argument('--num-epochs', type=int, default='30', help='number of training epochs')
+parser.add_argument('--num-epochs', type=int, default=30, help='number of training epochs')
 parser.add_argument('--tdt-ratio', default='8:1:1', help='training:development:testing ratio')
 parser.add_argument('--early-term', default=False, action='store_true', help='stop when F1 on dev set decreases; '
                                                                              'this is pretty much always a bad idea')
@@ -96,6 +96,10 @@ parser.add_argument('--checkpoint-dir', default='models/checkpoints')
 parser.add_argument('--clear', default=False, action='store_true',
                     help='remove previous summary/checkpoints before starting this run')
 parser.add_argument('--debug', default=None, help='hostname:port of TensorBoard debug server')
+
+parser.add_argument('--print-performance', default=False, action='store_true')
+parser.add_argument('--print-latex-results', default=False, action='store_true')
+
 
 # TODO: break the file into separate training/testing/inference phases
 parser.add_argument('--mode', choices=['TRAIN'], default='TRAIN', help=argparse.SUPPRESS)
@@ -142,8 +146,8 @@ def run_model(model: CANTRIPModel, cohort: Cohort, args):
     train, devel, test = make_train_devel_test_split(cohort.patients(), args.tdt_ratio)
 
     # Save summaries and checkpoints into the directories passed to the script
-    model_summaries_dir = os.path.join(args.summary_dir, args.cell_type, args.doc_encoder)
-    model_checkpoint_dir = os.path.join(args.checkpoint_dir, args.cell_type, args.doc_encoder)
+    model_summaries_dir = os.path.join(args.summary_dir, args.rnn_cell_type, args.snapshot_encoder)
+    model_checkpoint_dir = os.path.join(args.checkpoint_dir, args.rnn_cell_type, args.snapshot_encoder)
 
     # Clear any previous summaries/checkpoints if asked
     if args.clear:
@@ -303,7 +307,7 @@ def main(argv):
     vocabulary_size = len(cohort.vocabulary)
 
     # The embedding size is the same as the word embedding size unless using the BAG encoder
-    observation_embedding_size = args.word_embedding_size
+    observation_embedding_size = args.observation_embedding_size
 
     # Parse snapshot-encoder-specific arguments
     if args.snapshot_encoder == 'RNN':
@@ -320,12 +324,12 @@ def main(argv):
     else:
         raise ValueError('Given illegal snapshot encoder %s' % args.doc_encoder)
 
-    model = CANTRIPModel(max_seq_len=args.max_seq_len,
-                         max_snapshot_size=args.max_doc_len,
+    model = CANTRIPModel(max_seq_len=args.max_chron_len,
+                         max_snapshot_size=args.max_snapshot_size,
                          vocabulary_size=vocabulary_size,
                          observation_embedding_size=observation_embedding_size,
-                         num_hidden=args.num_hidden,
-                         cell_type=args.cell_type,
+                         num_hidden=args.rnn_num_hidden,
+                         cell_type=args.rnn_cell_type,
                          batch_size=args.batch_size,
                          snapshot_encoder=snapshot_encoder,
                          dropout=args.dropout,

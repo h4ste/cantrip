@@ -98,9 +98,10 @@ class SimpleRANCell(RNNCell):
 
     This is an implementation of the simplified RAN cell described in Equation group (2)."""
 
-    def __init__(self, num_units, input_size=None, reuse=None):
+    def __init__(self, num_units, input_size=None, normalize=False, reuse=None):
         if input_size is not None:
             logging.warn("%s: The input_size parameter is deprecated.", self)
+        self._normalize = normalize
         self._num_units = num_units
         self._reuse = reuse
 

@@ -8,8 +8,7 @@ Todo: Find a better way to represent delta encoder range dimensionality
 """
 
 
-from collections import Iterable
-from typing import Optional, Dict, Union, List
+from typing import Optional, Dict, Union, List, Text, Iterable
 
 import numpy as np
 from tqdm import tqdm
@@ -23,7 +22,7 @@ _UNK = 'UNK'
 DELTA_BUCKETS = [1, 7, 30, 60, 90, 182, 365, 730]
 
 
-def encode_delta_discrete(elapsed_seconds: int):
+def encode_delta_discrete(elapsed_seconds: int) -> List[int]:
     """Encode deltas into discrete buckets indicating:
         1. if elapsed_days <= 1 day
         2. if elapsed_days <= 1 week
@@ -37,30 +36,26 @@ def encode_delta_discrete(elapsed_seconds: int):
     :param elapsed_seconds: number of seconds between this clinical snapshot and the previous
     :return: 8-dimensional discrete binary representation of elapsed_seconds
     """
-    def _encode_delta_discrete(elapsed_seconds_: int) -> List[int]:
-        elapsed_days = elapsed_seconds_ / 60 / 60 / 24
-        return [1 if elapsed_days <= bucket else 0 for bucket in DELTA_BUCKETS]
+    elapsed_days = elapsed_seconds / 60 / 60 / 24
+    return [1 if elapsed_days <= bucket else 0 for bucket in DELTA_BUCKETS]
 
-    # We use the size parameter to denote how many dimensions this delta encoding will have
-    _encode_delta_discrete.size = len(DELTA_BUCKETS)
 
-    return _encode_delta_discrete
+# We use the size attribute to denote how many dimensions this delta encoding will have
+encode_delta_discrete.size = len(DELTA_BUCKETS)
 
 
 def encode_delta_continuous(elapsed_seconds: int):
     """Encode deltas into discrete buckets
 
-    :param elapsed_seconds:
-    :return:
+    :param elapsed_seconds: number of seconds between this clinical snapshot and the previous
+    :return: tanh(log(elapsed days + 1))
     """
-    def _encode_delta_continuous(elapsed_seconds_: int) -> int:
-        elapsed_days = elapsed_seconds_ / 60 / 60 / 24
-        return np.tanh(np.log(elapsed_days + 1))
+    elapsed_days = elapsed_seconds / 60 / 60 / 24
+    return np.tanh(np.log(elapsed_days + 1))
 
-    # We use the size parameter to denote how many dimensions this delta encoding will have
-    _encode_delta_continuous.size = 1
 
-    return _encode_delta_continuous
+# We use the size attribute to denote how many dimensions this delta encoding will have
+encode_delta_continuous.size = 1
 
 
 class Vocabulary(object):
@@ -74,10 +69,10 @@ class Vocabulary(object):
     """
 
     def __init__(self,
-                 term_index: Optional[Dict[str, int]] = None,
-                 term_frequencies: Optional[Union[Dict[str, int], Iterable[int]]] = None,
+                 term_index: Optional[Dict[Text, int]] = None,
+                 term_frequencies: Optional[Union[Dict[Text, int], Iterable[int]]] = None,
                  terms: Optional[Iterable[int]] = None,
-                 return_unk: Optional[bool] = True):
+                 return_unk: bool = True):
         """Creates a vocabulary from a given term_index, term_frequency and term list
 
         :param term_index (dict, optional): dictionary mapping terms to integer term ids
@@ -117,7 +112,7 @@ class Vocabulary(object):
                  vocabulary_file: str,
                  add_unk: bool = True,
                  return_unk: bool = True,
-                 max_vocab_size: Optional[int] =None):
+                 max_vocab_size: Optional[int] = None):
         """Loads a Vocabulary object from a given vocabulary TSV file path.
 
         The TSV file is assumed to be formatted as follows:
@@ -159,7 +154,7 @@ class Vocabulary(object):
 
     @classmethod
     def from_terms(cls,
-                   terms: Iterable[str],
+                   terms: Iterable[Text],
                    add_unk: bool = True,
                    return_unk: bool = True,
                    max_vocab_size: Optional[int] = None):
@@ -238,7 +233,7 @@ class Vocabulary(object):
         """
         return self.terms[term_id]
 
-    def lookup_term_id_by_term(self, term: str) -> Union[int, KeyError]:
+    def lookup_term_id_by_term(self, term: Text) -> int:
         """Look-up term by term ID for given term.
         Returns unknown term symbol if this vocabulary was created with return_unk=True, otherwise raises KeyError
         :param term: term to lookup
@@ -249,7 +244,7 @@ class Vocabulary(object):
         else:
             return self.term_index[term]
 
-    def add_term(self, term: str) -> int:
+    def add_term(self, term: Text) -> int:
         """Adds the given term to this vocabulary and returns its ID.
         If the given term is already in this vocabulary, its frequency will be updated. This method ignores any
         maximum_vocabulary_size given when creating the vocabulary.
@@ -566,13 +561,13 @@ class Cohort(object):
                 y.append(chronology.labels[i])
         return np.asarray(x), np.asarray(y)
 
-    def make_epoch_batches(self, batch_size, max_snap_size, max_seq_len, limit=None,
+    def make_epoch_batches(self, batch_size, max_snapshot_size, max_chron_len, limit=None,
                            delta_encoder=encode_delta_continuous, **kwargs):
         """Create shuffled, equal-size mini-batches from the entire cohort.
 
         :param batch_size: size of mini-batches (e.g., number of chronologies in each batch)
-        :param max_snap_size: maximum number of observations to consider in each snapshot (will be trimmed/zero-padded)
-        :param max_seq_len: maximum number of snapshots to consider in each chronology (will be trimmed/zero-padded)
+        :param max_snapshot_size: maximum number of observations to consider in each snapshot (will be trimmed/zero-padded)
+        :param max_chron_len: maximum number of snapshots to consider in each chronology (will be trimmed/zero-padded)
         :param limit: take only the first limit mini-batches, rather than all mini-batches for the cohort
         :param delta_encoder: encoder to use for encoding deltas
         :param kwargs: unused extra arguments (makes calling this method less tedious)
@@ -596,8 +591,8 @@ class Cohort(object):
 
         # Encode each minibatch as a ChronologyBatch object
         chronology_batches = [ChronologyBatch.from_chronologies(batch,
-                                                                max_snap_size,
-                                                                max_seq_len,
+                                                                max_snapshot_size,
+                                                                max_chron_len,
                                                                 delta_encoder) for batch in batches]
 
         return chronology_batches
@@ -629,28 +624,28 @@ class ChronologyBatch(object):
         self.snapshot_sizes = snapshot_sizes
 
     @classmethod
-    def from_chronologies(cls, chronologies: Iterable[Chronology], max_snap_len, max_seq_len, delta_encoder):
+    def from_chronologies(cls, chronologies: Iterable[Chronology], max_snapshot_size, max_chron_len, delta_encoder):
         """Create a zero-padded/trimmed ChronologyBatch from a given batch of Chronology objects
 
         :param chronologies: batch of Chronology objects
-        :param max_snap_len: maximum number of observations for each chronology (used to trim/zero-pad)
-        :param max_seq_len: maximum number of snapshots for each chronology (used to trim/zero-pad)
+        :param max_snapshot_size: maximum number of observations for each chronology (used to trim/zero-pad)
+        :param max_chron_len: maximum number of snapshots for each chronology (used to trim/zero-pad)
         :param delta_encoder: delta encoder to use
         :return: new ChronologyBatch object
         """
         # Infer batch size from the number of chronologies given to this method
-        batch_size = chronologies.shape[0]
+        batch_size = len(chronologies)
 
         # Zero-pad everything to the indicated maximum sizes
-        deltas = np.zeros([batch_size, max_seq_len, delta_encoder.size], np.float32)
+        deltas = np.zeros([batch_size, max_chron_len, delta_encoder.size], np.float32)
         seq_lens = np.zeros(batch_size, np.int32)
         labels = np.zeros(batch_size, np.int32)
-        snapshots = np.zeros([batch_size, max_seq_len, max_snap_len], np.int32)
-        snapshot_sizes = np.ones([batch_size, max_seq_len], np.int32)
+        snapshots = np.zeros([batch_size, max_chron_len, max_snapshot_size], np.int32)
+        snapshot_sizes = np.ones([batch_size, max_chron_len], np.int32)
 
         for i, chronology in enumerate(chronologies):
             # Get the trimmed but non-padded length of this chronology
-            seq_end = min(len(chronology.deltas), max_seq_len)
+            seq_end = min(len(chronology.deltas), max_chron_len)
             seq_lens[i] = seq_end
 
             # Convert deltas using delta encoder
@@ -663,7 +658,7 @@ class ChronologyBatch(object):
             # Convert sequences of observations to sequences of one-hots
             for j, snapshot in enumerate(chronology.snapshots[:seq_end]):
                 # Get the trimmed but non-padded length of this snapshot
-                snapshot_size = min(len(snapshot), max_snap_len)
+                snapshot_size = min(len(snapshot), max_snapshot_size)
                 snapshot_sizes[i, j] = snapshot_size
 
                 # Take the first snapshot_size observations

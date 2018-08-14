@@ -9,6 +9,7 @@ clinical snapshot encoding ops to the graph returning the final clinical snapsho
 import tensorflow as tf
 from tensorflow.nn.rnn_cell import GRUCell
 
+from src.models import CANTRIPModel
 from src.models.layers import rnn_layer, embedding_layer, create_embeddings
 
 
@@ -60,15 +61,15 @@ def cnn_encoder(windows=None, kernels=1000, dropout=0.0):
     if windows is None:
         windows = [3, 4, 5]
 
-    def _cnn_encoder(model):
+    def _cnn_encoder(model: CANTRIPModel):
         with tf.variable_scope('cnn_encoder'):
             # Embed observations
-            embedded_observations = embedding_layer(model.words, model.vocabulary_size, model.embedding_size)
+            embedded_observations = embedding_layer(model.observations, model.vocabulary_size, model.embedding_size)
 
             # Reshape to (batch * seq_len) x snapshot_size x embedding
             flattened_embedded_obs = tf.reshape(embedded_observations,
                                                 [model.batch_size * model.max_seq_len,
-                                                 model.max_doc_len,
+                                                 model.max_snapshot_size,
                                                  model.embedding_size])
 
             # Apply parallel convolutional and pooling layers
@@ -79,7 +80,7 @@ def cnn_encoder(windows=None, kernels=1000, dropout=0.0):
                                               kernel_size=n,
                                               activation=tf.nn.leaky_relu,
                                               name="conv_%dgram" % n)
-                pool_layer = tf.layers.max_pooling1d(conv_layer, 1, model.max_doc_len - n + 1,
+                pool_layer = tf.layers.max_pooling1d(conv_layer, 1, model.max_snapshot_size - n + 1,
                                                      name="maxpool_%dgram" % n)
                 outputs.append(pool_layer)
 
@@ -95,7 +96,7 @@ def cnn_encoder(windows=None, kernels=1000, dropout=0.0):
     return _cnn_encoder
 
 
-def get_bag_vectors(model):
+def get_bag_vectors(model: CANTRIPModel):
     """
     Represents snapshots as a bag of clinical observations. Specifically, returns a V-length
     binary vector such that the v-th index is 1 iff the v-th observation occurs in the given snapshot
@@ -103,11 +104,11 @@ def get_bag_vectors(model):
     :return: clinical snapshot encoding
     """
     # 1. Evaluate which entries in model.observations are non-zero
-    mask = tf.not_equal(model.words, 0)
+    mask = tf.not_equal(model.observations, 0)
     where = tf.where(mask)
 
     # 2. Get the vocabulary indices for non-zero observations
-    vocab_indices = tf.boolean_mask(model.words, mask)
+    vocab_indices = tf.boolean_mask(model.observations, mask)
     vocab_indices = tf.expand_dims(vocab_indices[:], axis=-1)
     vocab_indices = tf.to_int64(vocab_indices)
 
@@ -121,7 +122,7 @@ def get_bag_vectors(model):
     ones = tf.ones_like(indices[:, 0], dtype=tf.float32)
 
     # The dense shape will be the same as model.observations, but using the entire vocabulary as the final dimension
-    dense_shape = model.words.get_shape().as_list()
+    dense_shape = model.observations.get_shape().as_list()
     dense_shape[2] = model.vocabulary_size
 
     # Store as a sparse tensor because they're neat
@@ -129,7 +130,7 @@ def get_bag_vectors(model):
     return tf.sparse_reorder(st)
 
 
-def dense_encoder(model):
+def dense_encoder(model: CANTRIPModel):
     """
     Represents documents as an embedded bag of clinical observations. Specifically, returns an embedded of the V-length
     binary vector encoding all clinical observations included in a snapshot
@@ -164,7 +165,7 @@ def dense_encoder(model):
                           name='doc_embeddings')
 
 
-def bag_encoder(model):
+def bag_encoder(model: CANTRIPModel):
     """
     Represents snapshots as a bag of clinical observations. Specifically, returns a V-length
     binary vector such that the v-th index is 1 iff the v-th observation occurs in the given snapshot
@@ -187,14 +188,16 @@ def dan_encoder(obs_hidden_units, avg_hidden_units):
     :return: clinical snapshot encoding
     """
 
-    def _dan_encoder(model):
+    def _dan_encoder(model: CANTRIPModel):
         with tf.variable_scope('dan_encoder'):
-            embedded_observations = embedding_layer(model.words, model.vocabulary_size, model.embedding_size)
+            embedded_observations = embedding_layer(model.observations, model.vocabulary_size, model.embedding_size)
 
             # Reshape to (batch * seq_len * doc_len) x embedding
-            flattened_embedded_observations = tf.reshape(embedded_observations,
-                                                         [model.batch_size * model.max_seq_len * model.max_doc_len,
-                                                          model.embedding_size])
+            flattened_embedded_observations = tf.reshape(
+                embedded_observations,
+                [model.batch_size * model.max_seq_len * model.max_snapshot_size,
+                 model.embedding_size]
+            )
             # Add dense observation layers
             # TODO: switch back to ReLU as described in the paper
             obs_layer = flattened_embedded_observations
@@ -203,12 +206,12 @@ def dan_encoder(obs_hidden_units, avg_hidden_units):
 
             # Reshape final output by grouping observations in the same snapshot together
             obs_layer = tf.reshape(obs_layer, [model.batch_size * model.max_seq_len,
-                                               model.max_doc_len,
+                                               model.max_snapshot_size,
                                                obs_layer.shape[-1]])
 
             # Divide by active number of observations rather than the padded snapshot size; requires reshaping to
             # (batch x seq_len) x 1 so we can divide by this
-            flattened_snapshot_sizes = tf.reshape(model.doc_lengths, [model.batch_size * model.max_seq_len, 1])
+            flattened_snapshot_sizes = tf.reshape(model.snapshot_sizes, [model.batch_size * model.max_seq_len, 1])
 
             # Compute dynamic-size element-wise average
             avg_layer = tf.reduce_mean(obs_layer, axis=1) / tf.to_float(tf.maximum(flattened_snapshot_sizes, 1))
