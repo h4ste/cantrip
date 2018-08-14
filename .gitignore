@@ -10,7 +10,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
+/build/
 develop-eggs/
 dist/
 downloads/
@@ -67,6 +67,7 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/build/doctrees
 
 # PyBuilder
 target/
@@ -183,6 +184,5 @@ fabric.properties
 # Project files
 .idea/
 /data/
-docs/
 references/
 reports/
