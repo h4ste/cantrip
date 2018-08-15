@@ -1,6 +1,7 @@
-# CANTRIP
-## reCurrent Additive Network for Temporal RIsk Prediction
+# reCurrent Additive Network for Temporal RIsk Prediction (CANTRIP)
 A TensorFlow model for predicting temporal (disease) risk based on retrospective analysis of longitudinal clinical notes.
+
+Please check the [website](https://h4ste.github.io/cantrip) for details.
 
 # Dependencies
 - Python >= 3.6
