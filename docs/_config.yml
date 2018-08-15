@@ -8,6 +8,5 @@ exclude:
   - sphinx/source
   - sphinx/html/objects.inv
 include:
-  - sphinx/html/_modules
-  - sphinx/html/_static 
-  - _static
+  - sphinx/html/_modules/
+  - sphinx/html/_static/ 
