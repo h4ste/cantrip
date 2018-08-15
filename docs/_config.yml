@@ -5,8 +5,8 @@ show_downloads: true
 exclude: 
   - sphinx/Makefile
   - sphinx/make.bat
-  - sphinx/source
+  - sphinx/source/*
   - sphinx/html/objects.inv
 include:
-  - sphinx/html/_modules/
-  - sphinx/html/_static/ 
+  - sphinx/html/_modules/*
+  - sphinx/html/_static/*
