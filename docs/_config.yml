@@ -10,3 +10,4 @@ exclude:
 include:
   - sphinx/html/_modules
   - sphinx/html/_static 
+  - _static
