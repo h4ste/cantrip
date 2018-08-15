@@ -2,6 +2,5 @@ theme: jekyll-theme-minimal
 title: CANTRIP
 description: reCurrent Additive Networks for Temporal RIsk Prediction
 show_downloads: true
-exclude: [sphinx/Makefile, sphinx/make.bat, sphinx/source/]
-include: [sphinx/html/_static/], sphinx/html/_modules/]
+exclude: [sphinx]
 keep_files: [sphinx/html]
