@@ -9,4 +9,4 @@ exclude:
   - sphinx/html/objects.inv
 include:
   - sphinx/html/_modules
-  - sphinx/html_sources
+  - sphinx/html/_sources
