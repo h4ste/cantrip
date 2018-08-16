@@ -115,9 +115,12 @@ class Vocabulary(object):
                  max_vocab_size: Optional[int] = None):
         """Loads a Vocabulary object from a given vocabulary TSV file path.
 
-        The TSV file is assumed to be formatted as follows:
-        <Term>\t<Frequency>
-        where the line number indicates the ID of the term, and terms are provided in descending order of their
+        The TSV file is assumed to be formatted as follows::
+
+            [term]\t[frequency]
+
+        such that the line number indicates the ID of the ``[term]`` on each line, ``[frequency]`` indicates the number
+        of occurrences of that term in the training dataset, and terms are listed in descending order of their
         frequency.
 
         :param vocabulary_file: path to the TSV-formatted vocabulary file to load
@@ -126,8 +129,8 @@ class Vocabulary(object):
         :param return_unk: whether this Vocabulary object should return the unknown term symbol or raise a KeyError
             when asked to lookup out-of-vocabulary terms
         :param max_vocab_size: maximum vocabulary size. When loading from the disk, only the top max_vocab_size
-        most-frequent terms will be retained. All other terms will be associated with the unknown term symbol (and
-        their frequency will included in the unknown symbol's frequency). If None all terms are loaded.
+            most-frequent terms will be retained. All other terms will be associated with the unknown term symbol (and
+            their frequency will included in the unknown symbol's frequency). If None all terms are loaded.
         :return: a new Vocabulary object
         """
         term_index = {}
@@ -161,7 +164,7 @@ class Vocabulary(object):
         """Creates a vocabulary from an iterable of (possibly duplicate) terms.
 
         Unlike from_tsv, if max_vocab_size is specified the vocabulary will be created from the first max_vocab_size
-            encountered unique terms, rather than the top max_vocab_size most frequent terms
+        encountered unique terms, rather than the top max_vocab_size most frequent terms
 
         :param terms: iterable containing terms to add to the vocabulary
         :param add_unk: whether the unknown term symbol should be added to the vocabulary
@@ -169,7 +172,7 @@ class Vocabulary(object):
             looking up out-of-vocabulary terms
         :param max_vocab_size: maximum vocabulary size. Unlike from_tsv, if max_vocab_size is specified, the vocabulary
             will be created from the first max_vocab_size encountered unique terms, rather than the top max_vocab_size
-             most frequent terms.
+            most frequent terms.
         :return: a shiny new Vocabulary object
         """
         term_index = {}
@@ -195,6 +198,7 @@ class Vocabulary(object):
 
     def encode_term(self, term: str):
         """Encode the given term using this vocabulary.
+
         Terms included in this vocabulary will be returned as-is. Out-of-vocabulary terms will be returned as the
         unknown term symbol if this Vocabulary was created with  return_unk=True. Otherwise, encoding out-of-vocabulary
         terms will raise a KeyError.
@@ -211,6 +215,7 @@ class Vocabulary(object):
 
     def encode_term_id(self, term_id: int):
         """Encode the given term ID using this vocabulary.
+
         Term IDs included in this vocabulary will be returned as-is. Out-of-vocabulary term iss will be returned as the
         unknown term symbol ID (0) if this Vocabulary was created with return_unk=True. Otherwise, encoding
         out-of-vocabulary term IDs will raise a KeyError.
@@ -227,7 +232,9 @@ class Vocabulary(object):
 
     def lookup_term_by_term_id(self, term_id: int):
         """Look-up term by term by given term ID.
+
         Raises KeyException for invalid term IDs.
+
         :param term_id: ID of term to lookup
         :return: term associated with term_id in this vocabulary
         """
@@ -235,7 +242,9 @@ class Vocabulary(object):
 
     def lookup_term_id_by_term(self, term: Text) -> int:
         """Look-up term by term ID for given term.
+
         Returns unknown term symbol if this vocabulary was created with return_unk=True, otherwise raises KeyError
+
         :param term: term to lookup
         :return: term ID associated with given term in this vocabulary
         """
@@ -246,8 +255,10 @@ class Vocabulary(object):
 
     def add_term(self, term: Text) -> int:
         """Adds the given term to this vocabulary and returns its ID.
+
         If the given term is already in this vocabulary, its frequency will be updated. This method ignores any
         maximum_vocabulary_size given when creating the vocabulary.
+
         :param term: term to add
         :return: new or existing ID of the given term in this vocabulary
         """
@@ -315,7 +326,8 @@ class Cohort(object):
     """
 
     def __init__(self, patient_chronologies=None, vocabulary=Vocabulary(), patient_vocabulary=Vocabulary()):
-        """Create a (possibly-empty) Chronology from the given
+        """Create a (possibly-empty) Chronology.
+
         :param patient_chronologies: list of Chronology vectors associated with each patient. Index of each patient
             in this list should correspond to the ID for that patient in the patient_vocabulary
         :param vocabulary(Vocabulary): vocabulary of observations associated with this chronology
@@ -330,9 +342,9 @@ class Cohort(object):
 
     @classmethod
     def from_dict(cls, cohort, vocabulary):
-        """Create a chronology from a given dict of patient id to chronologies and vocabulary of observations
+        """Create a chronology from a given dict of patient id to chronologies and vocabulary of observations.
 
-        :param cohort(dict): a dict associating each patient in the cohort with a list of his or her chronologies
+        :param cohort: a dict associating each patient in the cohort with a list of his or her chronologies
         :param vocabulary: vocabulary of observations documented in this cohort
         :return: Shiny new Cohort object
         """
@@ -353,37 +365,44 @@ class Cohort(object):
     def from_disk(cls, patient_vectors, vocabulary, max_vocab_size=50_000):
         """Load cohort from a given chronology file and vocabulary file or Vocabulary object.
 
-        The format of this file is assumed to be as follows:
-        [external_patient_id]\t[chronology]
+        The format of this file is assumed to be as follows::
 
-        where each [chronology] is encoded as as sequence of snapshots:
-        [[snapshot]\t...]
+            [external_patient_id]\t[chronology]
 
-        and each [snapshot] is encoded as
-        [delta] [label] [observation IDs..]
+        where each ``[chronology]`` is encoded as as sequence of snapshots::
 
-        Note that snapshots are delimited by spaces, label must be 'true' or 'false', delta is represented in seconds
-        since previous chronology, and observation IDs should be the IDs associated with observation in the given
+            [[snapshot]\t...]
+
+        and each ``[snapshot]`` is encoded as::
+
+            [delta] [label] [observation IDs..]
+
+        Note that snapshots are delimited by *spaces*, label must be 'true' or 'false', delta is represented in seconds
+        since previous chronology, and observation IDs should be the IDs associated with the observation in the given
         vocabulary file.
 
-        Example:
-        11100004a   0 false 1104 1105 2300 25001    86400 false 1104 2300   172800 true 1104 2300 3500
-        Would indicate that patient with external ID '11100004a' had a chronology including 3 snapshots
+        For example, the line::
+
+            11100004a   0 false 1104 1105 2300 25001    86400 false 1104 2300   172800 true 1104 2300 3500
+
+        would indicate that patient with external ID '11100004a' had a chronology including 3 snapshots
         where:
-            - the first snapshot was negative for pneumonia, had a delta of 0, and contained only three clinical
-              observations: those associated with vocabulary terms 1104, 1105, 2300, and 25001;
-            - the second snapshot was negative for pneumonia, had a delta of 86400 seconds (1 day), and included only
-              two clinical observations: 1104 and 2300
-            - the third snapshot was positive for pneumonia, had a delta of 172800 seconds (2 days), and included only
-              three clinical observations: 1104, 2300, and 3500
 
-        The vocabulary file is assumed to be formatted as follows:
-        [observation]\t[frequency]
+        * the first snapshot was negative for pneumonia, had a delta of 0, and contained only three clinical
+          observations: those associated with vocabulary terms 1104, 1105, 2300, and 25001;
+        * the second snapshot was negative for pneumonia, had a delta of 86400 seconds (1 day), and included only
+          two clinical observations: 1104 and 2300
+        * the third snapshot was positive for pneumonia, had a delta of 172800 seconds (2 days), and included only
+          three clinical observations: 1104, 2300, and 3500
 
-        where the line number indicates the ID of the observation int he chronology (e.g., 1104), [observation] is a
-        human-readable string describing the observation, and [frequency] is the frequency of that observation in the
-        dataset (this value is only important if specifying a max_vocabulary_size as terms will be sorted in descending
-        frequency before the cut-off is made)
+        The vocabulary file is assumed to be formatted as follows::
+
+            [observation]\t[frequency]
+
+        where the line number indicates the ID of the observation int he chronology (e.g., 1104), ``[observation]`` is a
+        human-readable string describing the observation, and ``[frequency]`` is the frequency of that observation in
+        the dataset (this value is only important if specifying a max_vocabulary_size as terms will be sorted in
+        descending frequency before the cut-off is made)
 
         Note: as described in the AMIA paper , chronologies are truncated to terminate at the first positive label.
         Chronologies in which the first snapshot is positive or in which no snapshot is positive are discarded.
@@ -446,7 +465,7 @@ class Cohort(object):
                         break
 
                 # We only care about patients who were
-                # (1) who were not diagnosed in their first snapshot,
+                # (1) not diagnosed in their first snapshot,
                 # (2) had at least two snapshots, and
                 # (3) were eventually diagnosed
                 if labels[0] == 0 and len(deltas) > 2 and labels[-1] == 1:
@@ -507,6 +526,7 @@ class Cohort(object):
 
     def balance_chronologies(self):
         """Return a view of this cohort with balanced chronologies.
+
         Specifically, return a copy of this cohort in which each patient has an equal number of positive and
         negative chronology examples for training.
 
@@ -528,15 +548,15 @@ class Cohort(object):
         return Cohort(balanced_chronologies, self.vocabulary, self._patient_vocabulary)
 
     def make_simple_classification(self, delta_encoder=encode_delta_continuous, final_only=False, **kwargs):
-        """Represent this cohort as a data and label vector amenable to Sci-kit learn
+        """Represent this cohort as a data and label vector amenable to Sci-kit learn.
 
         :param delta_encoder: type of delta encoding to use
         :param final_only: whether to convert each pair of successive chronologies to an example (default) or to only
-        take the final positive and negative examples
+            take the final positive and negative examples
         :param kwargs:
         :return: an observation matrix X such that each row indicates a snapshot and each column indicates the
-        presence of absence of that feature (with deltas encoded as an extra feature) and a label vector y
-        indicating the label in the next snapshot
+            presence of absence of that feature (with deltas encoded as an extra feature) and a label vector y
+            indicating the label in the next snapshot
         """
         x = []
         y = []

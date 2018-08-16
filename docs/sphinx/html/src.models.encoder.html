@@ -32,8 +32,8 @@
 
           <div class="body" role="main">
             
-  <div class="section" id="src-models-encoder-package">
-<h1>src.models.encoder package<a class="headerlink" href="#src-models-encoder-package" title="Permalink to this headline">¶</a></h1>
+  <div class="section" id="module-src.models.encoder">
+<span id="src-models-encoder-package"></span><h1>src.models.encoder package<a class="headerlink" href="#module-src.models.encoder" title="Permalink to this headline">¶</a></h1>
 <div class="section" id="submodules">
 <h2>Submodules<a class="headerlink" href="#submodules" title="Permalink to this headline">¶</a></h2>
 </div>
@@ -65,18 +65,21 @@ binary vector such that the v-th index is 1 iff the v-th observation occurs in t
 <dl class="function">
 <dt id="src.models.encoder.snapshot_encoder.dan_encoder">
 <code class="descname">dan_encoder</code><span class="sig-paren">(</span><em>obs_hidden_units</em>, <em>avg_hidden_units</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/models/encoder/snapshot_encoder.html#dan_encoder"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.models.encoder.snapshot_encoder.dan_encoder" title="Permalink to this definition">¶</a></dt>
-<dd><p>Represents snapshots as a modified element-wise averages of embedded clinical observations
-:param obs_hidden_units: number of hidden units in dense layers between observation embeddings and average;</p>
-<blockquote>
-<div>if iterable multiple dense layers will be added using the respective hidden units</div></blockquote>
+<dd><p>Represents snapshots as a modified element-wise averages of embedded clinical observations.</p>
 <table class="docutils field-list" frame="void" rules="none">
 <col class="field-name" />
 <col class="field-body" />
 <tbody valign="top">
-<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>avg_hidden_units</strong> – number of hidden units in dense layers between average embeddings and snapshot encoding;
-if iterable multiple dense layers will be added using the respective hidden units</td>
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>obs_hidden_units</strong> – number of hidden units in dense layers between observation embeddings and average;
+if iterable multiple dense layers will be added using the respective hidden units</li>
+<li><strong>avg_hidden_units</strong> – number of hidden units in dense layers between average embeddings and snapshot encoding;
+if iterable multiple dense layers will be added using the respective hidden units</li>
+</ul>
+</td>
 </tr>
-<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body">clinical snapshot encoding</td>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last">clinical snapshot encoding</p>
+</td>
 </tr>
 </tbody>
 </table>
@@ -110,9 +113,6 @@ rnn cell will be creating using each number of hidden units
 :return: rnn_encoder function</p>
 </dd></dl>
 
-</div>
-<div class="section" id="module-src.models.encoder">
-<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-src.models.encoder" title="Permalink to this headline">¶</a></h2>
 </div>
 </div>
 

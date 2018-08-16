@@ -1,6 +1,11 @@
 src.scripts package
 ===================
 
+.. automodule:: src.scripts
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 Submodules
 ----------
 
@@ -29,10 +34,3 @@ src.scripts.svm module
     :show-inheritance:
 
 
-Module contents
----------------
-
-.. automodule:: src.scripts
-    :members:
-    :undoc-members:
-    :show-inheritance:

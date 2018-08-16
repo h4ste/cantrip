@@ -1,6 +1,11 @@
 src.models package
 ==================
 
+.. automodule:: src.models
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 Subpackages
 -----------
 
@@ -11,14 +16,6 @@ Subpackages
 
 Submodules
 ----------
-
-src.models.cantrip module
--------------------------
-
-.. automodule:: src.models.cantrip
-    :members:
-    :undoc-members:
-    :show-inheritance:
 
 src.models.cantrip\_model module
 --------------------------------
@@ -45,10 +42,3 @@ src.models.util module
     :show-inheritance:
 
 
-Module contents
----------------
-
-.. automodule:: src.models
-    :members:
-    :undoc-members:
-    :show-inheritance:

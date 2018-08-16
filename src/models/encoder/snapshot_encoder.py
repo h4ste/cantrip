@@ -179,12 +179,12 @@ def bag_encoder(model: CANTRIPModel):
 
 
 def dan_encoder(obs_hidden_units, avg_hidden_units):
-    """
-    Represents snapshots as a modified element-wise averages of embedded clinical observations
+    """Represents snapshots as a modified element-wise averages of embedded clinical observations.
+
     :param obs_hidden_units: number of hidden units in dense layers between observation embeddings and average;
-           if iterable multiple dense layers will be added using the respective hidden units
+        if iterable multiple dense layers will be added using the respective hidden units
     :param avg_hidden_units: number of hidden units in dense layers between average embeddings and snapshot encoding;
-           if iterable multiple dense layers will be added using the respective hidden units
+        if iterable multiple dense layers will be added using the respective hidden units
     :return: clinical snapshot encoding
     """
 

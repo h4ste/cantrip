@@ -2,7 +2,7 @@ import argparse
 
 from sklearn.dummy import DummyClassifier
 
-from data import encode_delta_discrete, encode_delta_continuous
+from src.data import encode_delta_discrete, encode_delta_continuous
 from src.scripts.svm import run_model
 
 parser = argparse.ArgumentParser(description='train and evaluate SVM on the given chronologies and vocabulary')

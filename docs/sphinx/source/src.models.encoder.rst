@@ -1,6 +1,11 @@
 src.models.encoder package
 ==========================
 
+.. automodule:: src.models.encoder
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 Submodules
 ----------
 
@@ -13,10 +18,3 @@ src.models.encoder.snapshot\_encoder module
     :show-inheritance:
 
 
-Module contents
----------------
-
-.. automodule:: src.models.encoder
-    :members:
-    :undoc-members:
-    :show-inheritance:

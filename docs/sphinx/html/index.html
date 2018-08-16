@@ -6,7 +6,7 @@
   <head>
     <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-    <title>Welcome to CANTRIP’s documentation! &#8212; CANTRIP 0.1.0 documentation</title>
+    <title>reCurrent Additive Network for Temporal RIsk Prediction (CANTRIP) &#8212; CANTRIP 0.1.0 documentation</title>
     <link rel="stylesheet" href="static/alabaster.css" type="text/css" />
     <link rel="stylesheet" href="static/pygments.css" type="text/css" />
     <script type="text/javascript" id="documentation_options" data-url_root="./" src="static/documentation_options.js"></script>
@@ -32,11 +32,47 @@
 
           <div class="body" role="main">
             
-  <div class="section" id="welcome-to-cantrip-s-documentation">
-<h1>Welcome to CANTRIP’s documentation!<a class="headerlink" href="#welcome-to-cantrip-s-documentation" title="Permalink to this headline">¶</a></h1>
-<div class="toctree-wrapper compound">
+  <div class="toctree-wrapper compound">
 </div>
-<span class="target" id="module-src"></span></div>
+<span class="target" id="module-src"></span><div class="section" id="recurrent-additive-network-for-temporal-risk-prediction-cantrip">
+<h1>reCurrent Additive Network for Temporal RIsk Prediction (CANTRIP)<a class="headerlink" href="#recurrent-additive-network-for-temporal-risk-prediction-cantrip" title="Permalink to this headline">¶</a></h1>
+<p>A TensorFlow model for predicting temporal (disease) risk based on retrospective analysis of longitudinal clinical notes.</p>
+<p>Please check the <a class="reference external" href="https://h4ste.github.io/cantrip">website</a> for details.</p>
+</div>
+<div class="section" id="dependencies">
+<h1>Dependencies<a class="headerlink" href="#dependencies" title="Permalink to this headline">¶</a></h1>
+<ul class="simple">
+<li>Python &gt;= 3.6</li>
+<li>TensorFlow &gt;= 1.9</li>
+<li>SciPy</li>
+<li>tqdm</li>
+<li>tabulate</li>
+</ul>
+</div>
+<div class="section" id="installation">
+<h1>Installation<a class="headerlink" href="#installation" title="Permalink to this headline">¶</a></h1>
+<dl class="docutils">
+<dt>To install, run</dt>
+<dd>$ python setup.py</dd>
+</dl>
+</div>
+<div class="section" id="documentation">
+<h1>Documentation<a class="headerlink" href="#documentation" title="Permalink to this headline">¶</a></h1>
+<p>Documentation on CANTRIP is provided at <a class="reference external" href="https://h4ste.github.io/cantrip">here</a>.
+<a class="reference external" href="http://www.sphinx-doc.org/en/master/">Sphinx</a>-based Python documentation is available <a class="reference external" href="https://h4ste.github.io/cantrip/sphinx/html/">here</a>.</p>
+</div>
+<div class="section" id="structure">
+<h1>Structure<a class="headerlink" href="#structure" title="Permalink to this headline">¶</a></h1>
+<ul class="simple">
+<li><a class="reference external" href="src/data">src/data</a> Classes and utilities for loading clinical chronologies (and observation vocabularies from the disk); Python documentation is provided <a class="reference external" href="https://h4ste.github.io/cantrip/sphinx/html/src.data.html">here</a></li>
+<li><a class="reference external" href="src/models">src/models</a> TensorFlow implemenation of CANTRIP; Python documentation is provided <a class="reference external" href="https://h4ste.github.io/cantrip/sphinx/html/src.models.html">here</a><ul>
+<li><a class="reference external" href="src/models/encoder/snapshot_encoder.py">src/models/encoder</a> TensorFlow implementation of clinical snapshot encoders; Python documentation is provided <a class="reference external" href="https://h4ste.github.io/cantrip/sphinx/html/src.models.encoder.html">here</a></li>
+<li><a class="reference external" href="src/models/encoder/rnn_cell.py">src/models/rnn_cell</a> TensorFlow implementation of <a class="reference external" href="https://arxiv.org/abs/1705.07393">Recurrent Additive Networks (RANs)</a> and Batch-normalized Gated Recurrent Units; Python documentation is provided <a class="reference external" href="https://h4ste.github.io/cantrip/sphinx/html/src.models.rnn_cell.html">here</a></li>
+</ul>
+</li>
+<li><a class="reference external" href="src/models/scripts.py">src/scripts</a> Executable scripts for running and evaluating CANTRIP as well as SVM and other baseline systems on pneumonia risk predcition; Python documentation is provided <a class="reference external" href="https://h4ste.github.io/cantrip/sphinx/html/src.scripts.html">here</a></li>
+</ul>
+</div>
 <div class="section" id="indices-and-tables">
 <h1>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Permalink to this headline">¶</a></h1>
 <ul class="simple">

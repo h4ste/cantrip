@@ -1,6 +1,11 @@
 src.models.rnn\_cell package
 ============================
 
+.. automodule:: src.models.rnn_cell
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 Submodules
 ----------
 
@@ -21,10 +26,3 @@ src.models.rnn\_cell.ran\_cell module
     :show-inheritance:
 
 
-Module contents
----------------
-
-.. automodule:: src.models.rnn_cell
-    :members:
-    :undoc-members:
-    :show-inheritance:

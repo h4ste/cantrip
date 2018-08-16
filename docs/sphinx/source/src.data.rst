@@ -1,6 +1,11 @@
 src.data package
 ================
 
+.. automodule:: src.data
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 Submodules
 ----------
 
@@ -13,10 +18,3 @@ src.data.scribe\_data module
     :show-inheritance:
 
 
-Module contents
----------------
-
-.. automodule:: src.data
-    :members:
-    :undoc-members:
-    :show-inheritance:

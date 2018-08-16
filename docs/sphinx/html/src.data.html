@@ -32,8 +32,8 @@
 
           <div class="body" role="main">
             
-  <div class="section" id="src-data-package">
-<h1>src.data package<a class="headerlink" href="#src-data-package" title="Permalink to this headline">¶</a></h1>
+  <div class="section" id="module-src.data">
+<span id="src-data-package"></span><h1>src.data package<a class="headerlink" href="#module-src.data" title="Permalink to this headline">¶</a></h1>
 <div class="section" id="submodules">
 <h2>Submodules<a class="headerlink" href="#submodules" title="Permalink to this headline">¶</a></h2>
 </div>
@@ -215,8 +215,8 @@ recorded for each snapshot in each chronology in this batch</p>
 <dl class="method">
 <dt id="src.data.scribe_data.Cohort.balance_chronologies">
 <code class="descname">balance_chronologies</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="modules/src/data/scribe_data.html#Cohort.balance_chronologies"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.data.scribe_data.Cohort.balance_chronologies" title="Permalink to this definition">¶</a></dt>
-<dd><p>Return a view of this cohort with balanced chronologies.
-Specifically, return a copy of this cohort in which each patient has an equal number of positive and
+<dd><p>Return a view of this cohort with balanced chronologies.</p>
+<p>Specifically, return a copy of this cohort in which each patient has an equal number of positive and
 negative chronology examples for training.</p>
 <p>As described in the AMIA paper, we use each chronology as-is as a positive example and create a negative example
 by predicting the label associated with the second-to-last chronology (which is always negative)
@@ -232,13 +232,13 @@ from the previous chronologies</p>
 <dl class="classmethod">
 <dt id="src.data.scribe_data.Cohort.from_dict">
 <em class="property">classmethod </em><code class="descname">from_dict</code><span class="sig-paren">(</span><em>cohort</em>, <em>vocabulary</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/data/scribe_data.html#Cohort.from_dict"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.data.scribe_data.Cohort.from_dict" title="Permalink to this definition">¶</a></dt>
-<dd><p>Create a chronology from a given dict of patient id to chronologies and vocabulary of observations</p>
+<dd><p>Create a chronology from a given dict of patient id to chronologies and vocabulary of observations.</p>
 <table class="docutils field-list" frame="void" rules="none">
 <col class="field-name" />
 <col class="field-body" />
 <tbody valign="top">
 <tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
-<li><strong>cohort</strong><strong>(</strong><strong>dict</strong><strong>)</strong> – a dict associating each patient in the cohort with a list of his or her chronologies</li>
+<li><strong>cohort</strong> – a dict associating each patient in the cohort with a list of his or her chronologies</li>
 <li><strong>vocabulary</strong> – vocabulary of observations documented in this cohort</li>
 </ul>
 </td>
@@ -254,21 +254,28 @@ from the previous chronologies</p>
 <dt id="src.data.scribe_data.Cohort.from_disk">
 <em class="property">classmethod </em><code class="descname">from_disk</code><span class="sig-paren">(</span><em>patient_vectors</em>, <em>vocabulary</em>, <em>max_vocab_size=50000</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/data/scribe_data.html#Cohort.from_disk"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.data.scribe_data.Cohort.from_disk" title="Permalink to this definition">¶</a></dt>
 <dd><p>Load cohort from a given chronology file and vocabulary file or Vocabulary object.</p>
-<p>The format of this file is assumed to be as follows:
-[external_patient_id]   [chronology]</p>
-<p>where each [chronology] is encoded as as sequence of snapshots:
-[[snapshot]     …]</p>
-<p>and each [snapshot] is encoded as
-[delta] [label] [observation IDs..]</p>
-<p>Note that snapshots are delimited by spaces, label must be ‘true’ or ‘false’, delta is represented in seconds
-since previous chronology, and observation IDs should be the IDs associated with observation in the given
+<p>The format of this file is assumed to be as follows:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">[</span><span class="n">external_patient_id</span><span class="p">]</span>       <span class="p">[</span><span class="n">chronology</span><span class="p">]</span>
+</pre></div>
+</div>
+<p>where each <code class="docutils literal notranslate"><span class="pre">[chronology]</span></code> is encoded as as sequence of snapshots:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">[[</span><span class="n">snapshot</span><span class="p">]</span> <span class="o">...</span><span class="p">]</span>
+</pre></div>
+</div>
+<p>and each <code class="docutils literal notranslate"><span class="pre">[snapshot]</span></code> is encoded as:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">[</span><span class="n">delta</span><span class="p">]</span> <span class="p">[</span><span class="n">label</span><span class="p">]</span> <span class="p">[</span><span class="n">observation</span> <span class="n">IDs</span><span class="o">..</span><span class="p">]</span>
+</pre></div>
+</div>
+<p>Note that snapshots are delimited by <em>spaces</em>, label must be ‘true’ or ‘false’, delta is represented in seconds
+since previous chronology, and observation IDs should be the IDs associated with the observation in the given
 vocabulary file.</p>
-<p>Example:
-11100004a   0 false 1104 1105 2300 25001    86400 false 1104 2300   172800 true 1104 2300 3500
-Would indicate that patient with external ID ‘11100004a’ had a chronology including 3 snapshots
+<p>For example, the line:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mi">11100004</span><span class="n">a</span>   <span class="mi">0</span> <span class="n">false</span> <span class="mi">1104</span> <span class="mi">1105</span> <span class="mi">2300</span> <span class="mi">25001</span>    <span class="mi">86400</span> <span class="n">false</span> <span class="mi">1104</span> <span class="mi">2300</span>   <span class="mi">172800</span> <span class="n">true</span> <span class="mi">1104</span> <span class="mi">2300</span> <span class="mi">3500</span>
+</pre></div>
+</div>
+<p>would indicate that patient with external ID ‘11100004a’ had a chronology including 3 snapshots
 where:</p>
-<blockquote>
-<div><ul class="simple">
+<ul class="simple">
 <li>the first snapshot was negative for pneumonia, had a delta of 0, and contained only three clinical
 observations: those associated with vocabulary terms 1104, 1105, 2300, and 25001;</li>
 <li>the second snapshot was negative for pneumonia, had a delta of 86400 seconds (1 day), and included only
@@ -276,13 +283,14 @@ two clinical observations: 1104 and 2300</li>
 <li>the third snapshot was positive for pneumonia, had a delta of 172800 seconds (2 days), and included only
 three clinical observations: 1104, 2300, and 3500</li>
 </ul>
-</div></blockquote>
-<p>The vocabulary file is assumed to be formatted as follows:
-[observation]   [frequency]</p>
-<p>where the line number indicates the ID of the observation int he chronology (e.g., 1104), [observation] is a
-human-readable string describing the observation, and [frequency] is the frequency of that observation in the
-dataset (this value is only important if specifying a max_vocabulary_size as terms will be sorted in descending
-frequency before the cut-off is made)</p>
+<p>The vocabulary file is assumed to be formatted as follows:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">[</span><span class="n">observation</span><span class="p">]</span>       <span class="p">[</span><span class="n">frequency</span><span class="p">]</span>
+</pre></div>
+</div>
+<p>where the line number indicates the ID of the observation int he chronology (e.g., 1104), <code class="docutils literal notranslate"><span class="pre">[observation]</span></code> is a
+human-readable string describing the observation, and <code class="docutils literal notranslate"><span class="pre">[frequency]</span></code> is the frequency of that observation in
+the dataset (this value is only important if specifying a max_vocabulary_size as terms will be sorted in
+descending frequency before the cut-off is made)</p>
 <p>Note: as described in the AMIA paper , chronologies are truncated to terminate at the first positive label.
 Chronologies in which the first snapshot is positive or in which no snapshot is positive are discarded.</p>
 <table class="docutils field-list" frame="void" rules="none">
@@ -339,24 +347,26 @@ observations will be retained, and all other observations will mapped to the unk
 <dl class="method">
 <dt id="src.data.scribe_data.Cohort.make_simple_classification">
 <code class="descname">make_simple_classification</code><span class="sig-paren">(</span><em>delta_encoder=&lt;function encode_delta_continuous&gt;</em>, <em>final_only=False</em>, <em>**kwargs</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/data/scribe_data.html#Cohort.make_simple_classification"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.data.scribe_data.Cohort.make_simple_classification" title="Permalink to this definition">¶</a></dt>
-<dd><p>Represent this cohort as a data and label vector amenable to Sci-kit learn</p>
+<dd><p>Represent this cohort as a data and label vector amenable to Sci-kit learn.</p>
 <table class="docutils field-list" frame="void" rules="none">
 <col class="field-name" />
 <col class="field-body" />
 <tbody valign="top">
-<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
 <li><strong>delta_encoder</strong> – type of delta encoding to use</li>
-<li><strong>final_only</strong> – whether to convert each pair of successive chronologies to an example (default) or to only</li>
+<li><strong>final_only</strong> – whether to convert each pair of successive chronologies to an example (default) or to only
+take the final positive and negative examples</li>
+<li><strong>kwargs</strong> – </li>
 </ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last">an observation matrix X such that each row indicates a snapshot and each column indicates the
+presence of absence of that feature (with deltas encoded as an extra feature) and a label vector y
+indicating the label in the next snapshot</p>
 </td>
 </tr>
 </tbody>
 </table>
-<p>take the final positive and negative examples
-:param kwargs:
-:return: an observation matrix X such that each row indicates a snapshot and each column indicates the
-presence of absence of that feature (with deltas encoded as an extra feature) and a label vector y
-indicating the label in the next snapshot</p>
 </dd></dl>
 
 <dl class="method">
@@ -394,18 +404,26 @@ Term ids are contiguous, and start from 0.</p>
 <dl class="method">
 <dt id="src.data.scribe_data.Vocabulary.add_term">
 <code class="descname">add_term</code><span class="sig-paren">(</span><em>term: str</em><span class="sig-paren">)</span> &#x2192; int<a class="reference internal" href="modules/src/data/scribe_data.html#Vocabulary.add_term"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.data.scribe_data.Vocabulary.add_term" title="Permalink to this definition">¶</a></dt>
-<dd><p>Adds the given term to this vocabulary and returns its ID.
-If the given term is already in this vocabulary, its frequency will be updated. This method ignores any
-maximum_vocabulary_size given when creating the vocabulary.
-:param term: term to add
-:return: new or existing ID of the given term in this vocabulary</p>
+<dd><p>Adds the given term to this vocabulary and returns its ID.</p>
+<p>If the given term is already in this vocabulary, its frequency will be updated. This method ignores any
+maximum_vocabulary_size given when creating the vocabulary.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>term</strong> – term to add</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body">new or existing ID of the given term in this vocabulary</td>
+</tr>
+</tbody>
+</table>
 </dd></dl>
 
 <dl class="method">
 <dt id="src.data.scribe_data.Vocabulary.encode_term">
 <code class="descname">encode_term</code><span class="sig-paren">(</span><em>term: str</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/data/scribe_data.html#Vocabulary.encode_term"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.data.scribe_data.Vocabulary.encode_term" title="Permalink to this definition">¶</a></dt>
-<dd><p>Encode the given term using this vocabulary.
-Terms included in this vocabulary will be returned as-is. Out-of-vocabulary terms will be returned as the
+<dd><p>Encode the given term using this vocabulary.</p>
+<p>Terms included in this vocabulary will be returned as-is. Out-of-vocabulary terms will be returned as the
 unknown term symbol if this Vocabulary was created with  return_unk=True. Otherwise, encoding out-of-vocabulary
 terms will raise a KeyError.</p>
 <table class="docutils field-list" frame="void" rules="none">
@@ -423,8 +441,8 @@ terms will raise a KeyError.</p>
 <dl class="method">
 <dt id="src.data.scribe_data.Vocabulary.encode_term_id">
 <code class="descname">encode_term_id</code><span class="sig-paren">(</span><em>term_id: int</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/data/scribe_data.html#Vocabulary.encode_term_id"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.data.scribe_data.Vocabulary.encode_term_id" title="Permalink to this definition">¶</a></dt>
-<dd><p>Encode the given term ID using this vocabulary.
-Term IDs included in this vocabulary will be returned as-is. Out-of-vocabulary term iss will be returned as the
+<dd><p>Encode the given term ID using this vocabulary.</p>
+<p>Term IDs included in this vocabulary will be returned as-is. Out-of-vocabulary term iss will be returned as the
 unknown term symbol ID (0) if this Vocabulary was created with return_unk=True. Otherwise, encoding
 out-of-vocabulary term IDs will raise a KeyError.</p>
 <table class="docutils field-list" frame="void" rules="none">
@@ -443,10 +461,8 @@ out-of-vocabulary term IDs will raise a KeyError.</p>
 <dt id="src.data.scribe_data.Vocabulary.from_terms">
 <em class="property">classmethod </em><code class="descname">from_terms</code><span class="sig-paren">(</span><em>terms: Iterable[str], add_unk: bool = True, return_unk: bool = True, max_vocab_size: Union[int, NoneType] = None</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/data/scribe_data.html#Vocabulary.from_terms"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.data.scribe_data.Vocabulary.from_terms" title="Permalink to this definition">¶</a></dt>
 <dd><p>Creates a vocabulary from an iterable of (possibly duplicate) terms.</p>
-<dl class="docutils">
-<dt>Unlike from_tsv, if max_vocab_size is specified the vocabulary will be created from the first max_vocab_size</dt>
-<dd>encountered unique terms, rather than the top max_vocab_size most frequent terms</dd>
-</dl>
+<p>Unlike from_tsv, if max_vocab_size is specified the vocabulary will be created from the first max_vocab_size
+encountered unique terms, rather than the top max_vocab_size most frequent terms</p>
 <table class="docutils field-list" frame="void" rules="none">
 <col class="field-name" />
 <col class="field-body" />
@@ -456,11 +472,9 @@ out-of-vocabulary term IDs will raise a KeyError.</p>
 <li><strong>add_unk</strong> – whether the unknown term symbol should be added to the vocabulary</li>
 <li><strong>return_unk</strong> – whether this Vocabulary should return the unknown term symbol or raise KeyError when
 looking up out-of-vocabulary terms</li>
-<li><strong>max_vocab_size</strong> – <p>maximum vocabulary size. Unlike from_tsv, if max_vocab_size is specified, the vocabulary
-will be created from the first max_vocab_size encountered unique terms, rather than the top max_vocab_size</p>
-<blockquote>
-<div>most frequent terms.</div></blockquote>
-</li>
+<li><strong>max_vocab_size</strong> – maximum vocabulary size. Unlike from_tsv, if max_vocab_size is specified, the vocabulary
+will be created from the first max_vocab_size encountered unique terms, rather than the top max_vocab_size
+most frequent terms.</li>
 </ul>
 </td>
 </tr>
@@ -475,47 +489,68 @@ will be created from the first max_vocab_size encountered unique terms, rather t
 <dt id="src.data.scribe_data.Vocabulary.from_tsv">
 <em class="property">classmethod </em><code class="descname">from_tsv</code><span class="sig-paren">(</span><em>vocabulary_file: str</em>, <em>add_unk: bool = True</em>, <em>return_unk: bool = True</em>, <em>max_vocab_size: Union[int</em>, <em>NoneType] = None</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/data/scribe_data.html#Vocabulary.from_tsv"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.data.scribe_data.Vocabulary.from_tsv" title="Permalink to this definition">¶</a></dt>
 <dd><p>Loads a Vocabulary object from a given vocabulary TSV file path.</p>
-<p>The TSV file is assumed to be formatted as follows:
-&lt;Term&gt;  &lt;Frequency&gt;
-where the line number indicates the ID of the term, and terms are provided in descending order of their
+<p>The TSV file is assumed to be formatted as follows:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">[</span><span class="n">term</span><span class="p">]</span>      <span class="p">[</span><span class="n">frequency</span><span class="p">]</span>
+</pre></div>
+</div>
+<p>such that the line number indicates the ID of the <code class="docutils literal notranslate"><span class="pre">[term]</span></code> on each line, <code class="docutils literal notranslate"><span class="pre">[frequency]</span></code> indicates the number
+of occurrences of that term in the training dataset, and terms are listed in descending order of their
 frequency.</p>
 <table class="docutils field-list" frame="void" rules="none">
 <col class="field-name" />
 <col class="field-body" />
 <tbody valign="top">
-<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
 <li><strong>vocabulary_file</strong> – path to the TSV-formatted vocabulary file to load</li>
 <li><strong>add_unk</strong> – whether to add the unknown term symbol the vocabulary (set to false if vocabulary
 already includes the unknown term symbol)</li>
 <li><strong>return_unk</strong> – whether this Vocabulary object should return the unknown term symbol or raise a KeyError
 when asked to lookup out-of-vocabulary terms</li>
-<li><strong>max_vocab_size</strong> – maximum vocabulary size. When loading from the disk, only the top max_vocab_size</li>
+<li><strong>max_vocab_size</strong> – maximum vocabulary size. When loading from the disk, only the top max_vocab_size
+most-frequent terms will be retained. All other terms will be associated with the unknown term symbol (and
+their frequency will included in the unknown symbol’s frequency). If None all terms are loaded.</li>
 </ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last">a new Vocabulary object</p>
 </td>
 </tr>
 </tbody>
 </table>
-<p>most-frequent terms will be retained. All other terms will be associated with the unknown term symbol (and
-their frequency will included in the unknown symbol’s frequency). If None all terms are loaded.
-:return: a new Vocabulary object</p>
 </dd></dl>
 
 <dl class="method">
 <dt id="src.data.scribe_data.Vocabulary.lookup_term_by_term_id">
 <code class="descname">lookup_term_by_term_id</code><span class="sig-paren">(</span><em>term_id: int</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/data/scribe_data.html#Vocabulary.lookup_term_by_term_id"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.data.scribe_data.Vocabulary.lookup_term_by_term_id" title="Permalink to this definition">¶</a></dt>
-<dd><p>Look-up term by term by given term ID.
-Raises KeyException for invalid term IDs.
-:param term_id: ID of term to lookup
-:return: term associated with term_id in this vocabulary</p>
+<dd><p>Look-up term by term by given term ID.</p>
+<p>Raises KeyException for invalid term IDs.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>term_id</strong> – ID of term to lookup</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body">term associated with term_id in this vocabulary</td>
+</tr>
+</tbody>
+</table>
 </dd></dl>
 
 <dl class="method">
 <dt id="src.data.scribe_data.Vocabulary.lookup_term_id_by_term">
 <code class="descname">lookup_term_id_by_term</code><span class="sig-paren">(</span><em>term: str</em><span class="sig-paren">)</span> &#x2192; int<a class="reference internal" href="modules/src/data/scribe_data.html#Vocabulary.lookup_term_id_by_term"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.data.scribe_data.Vocabulary.lookup_term_id_by_term" title="Permalink to this definition">¶</a></dt>
-<dd><p>Look-up term by term ID for given term.
-Returns unknown term symbol if this vocabulary was created with return_unk=True, otherwise raises KeyError
-:param term: term to lookup
-:return: term ID associated with given term in this vocabulary</p>
+<dd><p>Look-up term by term ID for given term.</p>
+<p>Returns unknown term symbol if this vocabulary was created with return_unk=True, otherwise raises KeyError</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>term</strong> – term to lookup</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body">term ID associated with given term in this vocabulary</td>
+</tr>
+</tbody>
+</table>
 </dd></dl>
 
 </dd></dl>
@@ -565,9 +600,6 @@ Returns unknown term symbol if this vocabulary was created with return_unk=True,
 </table>
 </dd></dl>
 
-</div>
-<div class="section" id="module-src.data">
-<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-src.data" title="Permalink to this headline">¶</a></h2>
 </div>
 </div>
 
