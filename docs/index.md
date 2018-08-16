@@ -8,9 +8,6 @@ A TensorFlow model for predicting temporal (disease) risk based on retrospective
 # Dependencies
 - Python >= 3.6
 - TensorFlow >= 1.9
-- SciPy
-- tqdm
-- tabulate
 
 # Installation
 To install, run
