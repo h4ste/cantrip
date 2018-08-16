@@ -1,37 +1,26 @@
-## Welcome to GitHub Pages
+# reCurrent Additive Network for Temporal RIsk Prediction (CANTRIP)
+A TensorFlow model for predicting temporal (disease) risk based on retrospective analysis of longitudinal clinical notes.
 
-You can use the [editor on GitHub](https://github.com/h4ste/cantrip/edit/master/README.md) to maintain and preview the content for your website in Markdown files.
+Please check the [website](https://h4ste.github.io/cantrip) for details.
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+# Dependencies
+- Python >= 3.6
+- TensorFlow >= 1.9
+- SciPy
+- tqdm
+- tabulate
 
-### Markdown
+# Installation
+To install, run 
+  $ python setup.py
+  
+# Documentation
+Documentation on CANTRIP is provided at [here](https://h4ste.github.io/cantrip). 
+[Sphinx](http://www.sphinx-doc.org/en/master/)-based Python documentation is available [here](https://h4ste.github.io/cantrip/sphinx/html/).
 
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
-
-```markdown
-Syntax highlighted code block
-
-# Header 1
-## Header 2
-### Header 3
-
-- Bulleted
-- List
-
-1. Numbered
-2. List
-
-**Bold** and _Italic_ and `Code` text
-
-[Link](url) and ![Image](src)
-```
-
-For more details see [GitHub Flavored Markdown](https://guides.github.com/features/mastering-markdown/).
-
-### Jekyll Themes
-
-Your Pages site will use the layout and styles from the Jekyll theme you have selected in your [repository settings](https://github.com/h4ste/cantrip/settings). The name of this theme is saved in the Jekyll `_config.yml` configuration file.
-
-### Support or Contact
-
-Having trouble with Pages? Check out our [documentation](https://help.github.com/categories/github-pages-basics/) or [contact support](https://github.com/contact) and we’ll help you sort it out.
+# Structure
+- [src/data](src/data) Classes and utilities for loading clinical chronologies (and observation vocabularies from the disk); Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.data.html)
+- [src/models](src/models) TensorFlow implemenation of CANTRIP; Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.models.html)
+    - [src/models/encoder](src/models/encoder/snapshot_encoder.py) TensorFlow implementation of clinical snapshot encoders; Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.models.encoder.html)
+    - [src/models/rnn_cell](src/models/encoder/rnn_cell.py) TensorFlow implementation of [Recurrent Additive Networks (RANs)](https://arxiv.org/abs/1705.07393) and Batch-normalized Gated Recurrent Units; Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.models.rnn_cell.html)
+- [src/scripts](src/models/scripts.py) Executable scripts for running and evaluating CANTRIP as well as SVM and other baseline systems on pneumonia risk predcition; Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.scripts.html)
