@@ -4,7 +4,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score, roc_auc_score
 from sklearn import svm
 
-from src.data import Cohort
+from src.data import Cohort, encode_delta_discrete, encode_delta_continuous
 from src.scripts.cantrip import make_train_devel_test_split
 
 np.random.seed(1337)
@@ -13,11 +13,12 @@ parser = argparse.ArgumentParser(description='train and evaluate SVM on the give
 parser.add_argument('--chronology-path', required=True, help='path to cohort chronologies')
 parser.add_argument('--vocabulary-path', required=True, help='path to cohort vocabulary')
 parser.add_argument('--tdt-ratio', default='8:1:1', help='training:development:testing ratio')
-parser.add_argument('--vocabulary-size', type=int, default=50_000, metavar='V',
+parser.add_argument('--vocabulary-size', type=int, default=50000, metavar='V',
                     help='maximum vocabulary size, only the top V occurring terms will be used')
 parser.add_argument('--final-only', default=False, action='store_true',
                     help='only consider the final prediction in each chronology')
 parser.add_argument('--discrete-deltas', dest='delta_encoder', action='store_const',
+                    const=encode_delta_discrete, default=encode_delta_continuous,
                     help='rather than encoding deltas as tanh(log(delta)), '
                          'discretize them into buckets: > 1 day, > 2 days, > 1 week, etc.'
                          '(we don\'t have enough data for this be useful)')
@@ -47,15 +48,15 @@ def print_model_evaluation(model, train, devel, test):
     print('Training model...')
     model.fit(*train)
 
-    def evaluate(dataset):
-        metrics = evaluate_classifier(*dataset, model)
+    def evaluate(x, y_true):
+        metrics = evaluate_classifier(x, y_true, model)
         return [metrics['Accuracy'], metrics['Precision'], metrics['Recall'], metrics['F1'], metrics['AUROC']]
 
     from tabulate import tabulate
 
-    table = tabulate([['train'] + evaluate(train),
-                      ['devel'] + evaluate(devel),
-                      ['test'] + evaluate(test)],
+    table = tabulate([['train'] + evaluate(*train),
+                      ['devel'] + evaluate(*devel),
+                      ['test'] + evaluate(*test)],
                      headers=['Acc.', 'P', 'R', 'F1', 'AUC'],
                      tablefmt='latex_booktabs')
 

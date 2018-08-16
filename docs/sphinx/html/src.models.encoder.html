@@ -7,17 +7,17 @@
     <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     <title>src.models.encoder package &#8212; CANTRIP 0.1.0 documentation</title>
-    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
-    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
-    <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
-    <script type="text/javascript" src="_static/jquery.js"></script>
-    <script type="text/javascript" src="_static/underscore.js"></script>
-    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="stylesheet" href="static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="static/pygments.css" type="text/css" />
+    <script type="text/javascript" id="documentation_options" data-url_root="./" src="static/documentation_options.js"></script>
+    <script type="text/javascript" src="static/jquery.js"></script>
+    <script type="text/javascript" src="static/underscore.js"></script>
+    <script type="text/javascript" src="static/doctools.js"></script>
     <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
    
-  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  <link rel="stylesheet" href="static/custom.css" type="text/css" />
   
   
   <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
@@ -45,7 +45,7 @@ clinical snapshot encoding ops to the graph returning the final clinical snapsho
 [batch x max_seq_len x embedding_size]</p>
 <dl class="function">
 <dt id="src.models.encoder.snapshot_encoder.bag_encoder">
-<code class="descname">bag_encoder</code><span class="sig-paren">(</span><em>model: src.models.cantrip_model.CANTRIPModel</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/models/encoder/snapshot_encoder.html#bag_encoder"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.models.encoder.snapshot_encoder.bag_encoder" title="Permalink to this definition">¶</a></dt>
+<code class="descname">bag_encoder</code><span class="sig-paren">(</span><em>model: src.models.cantrip_model.CANTRIPModel</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/models/encoder/snapshot_encoder.html#bag_encoder"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.models.encoder.snapshot_encoder.bag_encoder" title="Permalink to this definition">¶</a></dt>
 <dd><p>Represents snapshots as a bag of clinical observations. Specifically, returns a V-length
 binary vector such that the v-th index is 1 iff the v-th observation occurs in the given snapshot
 :param model: CANTRIP model
@@ -54,7 +54,7 @@ binary vector such that the v-th index is 1 iff the v-th observation occurs in t
 
 <dl class="function">
 <dt id="src.models.encoder.snapshot_encoder.cnn_encoder">
-<code class="descname">cnn_encoder</code><span class="sig-paren">(</span><em>windows=None</em>, <em>kernels=1000</em>, <em>dropout=0.0</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/models/encoder/snapshot_encoder.html#cnn_encoder"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.models.encoder.snapshot_encoder.cnn_encoder" title="Permalink to this definition">¶</a></dt>
+<code class="descname">cnn_encoder</code><span class="sig-paren">(</span><em>windows=None</em>, <em>kernels=1000</em>, <em>dropout=0.0</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/models/encoder/snapshot_encoder.html#cnn_encoder"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.models.encoder.snapshot_encoder.cnn_encoder" title="Permalink to this definition">¶</a></dt>
 <dd><p>Creates a CNN encoder with the given number of windows, kernels, and dropout
 :param windows: number of consecutive observations to consider; defaults to [3, 4, 5]
 :param kernels: number of convolutional kernels; defaults to 1,000
@@ -64,7 +64,7 @@ binary vector such that the v-th index is 1 iff the v-th observation occurs in t
 
 <dl class="function">
 <dt id="src.models.encoder.snapshot_encoder.dan_encoder">
-<code class="descname">dan_encoder</code><span class="sig-paren">(</span><em>obs_hidden_units</em>, <em>avg_hidden_units</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/models/encoder/snapshot_encoder.html#dan_encoder"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.models.encoder.snapshot_encoder.dan_encoder" title="Permalink to this definition">¶</a></dt>
+<code class="descname">dan_encoder</code><span class="sig-paren">(</span><em>obs_hidden_units</em>, <em>avg_hidden_units</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/models/encoder/snapshot_encoder.html#dan_encoder"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.models.encoder.snapshot_encoder.dan_encoder" title="Permalink to this definition">¶</a></dt>
 <dd><p>Represents snapshots as a modified element-wise averages of embedded clinical observations
 :param obs_hidden_units: number of hidden units in dense layers between observation embeddings and average;</p>
 <blockquote>
@@ -84,7 +84,7 @@ if iterable multiple dense layers will be added using the respective hidden unit
 
 <dl class="function">
 <dt id="src.models.encoder.snapshot_encoder.dense_encoder">
-<code class="descname">dense_encoder</code><span class="sig-paren">(</span><em>model: src.models.cantrip_model.CANTRIPModel</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/models/encoder/snapshot_encoder.html#dense_encoder"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.models.encoder.snapshot_encoder.dense_encoder" title="Permalink to this definition">¶</a></dt>
+<code class="descname">dense_encoder</code><span class="sig-paren">(</span><em>model: src.models.cantrip_model.CANTRIPModel</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/models/encoder/snapshot_encoder.html#dense_encoder"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.models.encoder.snapshot_encoder.dense_encoder" title="Permalink to this definition">¶</a></dt>
 <dd><p>Represents documents as an embedded bag of clinical observations. Specifically, returns an embedded of the V-length
 binary vector encoding all clinical observations included in a snapshot
 :param model: CANTRIP model
@@ -93,7 +93,7 @@ binary vector encoding all clinical observations included in a snapshot
 
 <dl class="function">
 <dt id="src.models.encoder.snapshot_encoder.get_bag_vectors">
-<code class="descname">get_bag_vectors</code><span class="sig-paren">(</span><em>model: src.models.cantrip_model.CANTRIPModel</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/models/encoder/snapshot_encoder.html#get_bag_vectors"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.models.encoder.snapshot_encoder.get_bag_vectors" title="Permalink to this definition">¶</a></dt>
+<code class="descname">get_bag_vectors</code><span class="sig-paren">(</span><em>model: src.models.cantrip_model.CANTRIPModel</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/models/encoder/snapshot_encoder.html#get_bag_vectors"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.models.encoder.snapshot_encoder.get_bag_vectors" title="Permalink to this definition">¶</a></dt>
 <dd><p>Represents snapshots as a bag of clinical observations. Specifically, returns a V-length
 binary vector such that the v-th index is 1 iff the v-th observation occurs in the given snapshot
 :param model: CANTRIP model
@@ -102,7 +102,7 @@ binary vector such that the v-th index is 1 iff the v-th observation occurs in t
 
 <dl class="function">
 <dt id="src.models.encoder.snapshot_encoder.rnn_encoder">
-<code class="descname">rnn_encoder</code><span class="sig-paren">(</span><em>num_hidden</em>, <em>cell_fn=&lt;class 'tensorflow.python.ops.rnn_cell_impl.GRUCell'&gt;</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/models/encoder/snapshot_encoder.html#rnn_encoder"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.models.encoder.snapshot_encoder.rnn_encoder" title="Permalink to this definition">¶</a></dt>
+<code class="descname">rnn_encoder</code><span class="sig-paren">(</span><em>num_hidden</em>, <em>cell_fn=&lt;class 'tensorflow.python.ops.rnn_cell_impl.GRUCell'&gt;</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/models/encoder/snapshot_encoder.html#rnn_encoder"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.models.encoder.snapshot_encoder.rnn_encoder" title="Permalink to this definition">¶</a></dt>
 <dd><p>Creates an RNN encoder with the given number of hidden layers. If
 :param num_hidden: number of hidden (memory) units use; num_hidden is iterable, a multi-layer
 rnn cell will be creating using each number of hidden units
@@ -165,7 +165,7 @@ rnn cell will be creating using each number of hidden units
       &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.11</a>
       
       |
-      <a href="_sources/src.models.encoder.rst.txt"
+      <a href="sources/src.models.encoder.rst.txt"
           rel="nofollow">Page source</a>
     </div>
 

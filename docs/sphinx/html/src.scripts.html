@@ -7,17 +7,17 @@
     <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     <title>src.scripts package &#8212; CANTRIP 0.1.0 documentation</title>
-    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
-    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
-    <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
-    <script type="text/javascript" src="_static/jquery.js"></script>
-    <script type="text/javascript" src="_static/underscore.js"></script>
-    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="stylesheet" href="static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="static/pygments.css" type="text/css" />
+    <script type="text/javascript" id="documentation_options" data-url_root="./" src="static/documentation_options.js"></script>
+    <script type="text/javascript" src="static/jquery.js"></script>
+    <script type="text/javascript" src="static/underscore.js"></script>
+    <script type="text/javascript" src="static/doctools.js"></script>
     <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
    
-  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  <link rel="stylesheet" href="static/custom.css" type="text/css" />
   
   
   <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
@@ -44,14 +44,14 @@
 <span id="src-scripts-cantrip-module"></span><h2>src.scripts.cantrip module<a class="headerlink" href="#module-src.scripts.cantrip" title="Permalink to this headline">¶</a></h2>
 <dl class="function">
 <dt id="src.scripts.cantrip.main">
-<code class="descname">main</code><span class="sig-paren">(</span><em>argv</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/scripts/cantrip.html#main"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.scripts.cantrip.main" title="Permalink to this definition">¶</a></dt>
+<code class="descname">main</code><span class="sig-paren">(</span><em>argv</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/scripts/cantrip.html#main"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.scripts.cantrip.main" title="Permalink to this definition">¶</a></dt>
 <dd><p>Main method for the script. Parses arguments and calls run_model.
 :param argv: commandline arguments</p>
 </dd></dl>
 
 <dl class="function">
 <dt id="src.scripts.cantrip.make_train_devel_test_split">
-<code class="descname">make_train_devel_test_split</code><span class="sig-paren">(</span><em>data: collections.abc.Iterable</em>, <em>ratio: str) -&gt; (&lt;class 'collections.abc.Iterable'&gt;</em>, <em>&lt;class 'collections.abc.Iterable'&gt;</em>, <em>&lt;class 'collections.abc.Iterable'&gt;</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/scripts/cantrip.html#make_train_devel_test_split"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.scripts.cantrip.make_train_devel_test_split" title="Permalink to this definition">¶</a></dt>
+<code class="descname">make_train_devel_test_split</code><span class="sig-paren">(</span><em>data: collections.abc.Iterable</em>, <em>ratio: str) -&gt; (&lt;class 'collections.abc.Iterable'&gt;</em>, <em>&lt;class 'collections.abc.Iterable'&gt;</em>, <em>&lt;class 'collections.abc.Iterable'&gt;</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/scripts/cantrip.html#make_train_devel_test_split"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.scripts.cantrip.make_train_devel_test_split" title="Permalink to this definition">¶</a></dt>
 <dd><p>Split the given dataset into training, development, and testing sets using the given ratio
 e.g., split(data, ‘8:1:1’) splits 80% as training, 10% as development, and 10% as testing
 :param data: dataset to split
@@ -61,7 +61,7 @@ e.g., split(data, ‘8:1:1’) splits 80% as training, 10% as development, and 1
 
 <dl class="function">
 <dt id="src.scripts.cantrip.print_latex_results">
-<code class="descname">print_latex_results</code><span class="sig-paren">(</span><em>train: dict</em>, <em>devel: dict</em>, <em>test: dict</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/scripts/cantrip.html#print_latex_results"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.scripts.cantrip.print_latex_results" title="Permalink to this definition">¶</a></dt>
+<code class="descname">print_latex_results</code><span class="sig-paren">(</span><em>train: dict</em>, <em>devel: dict</em>, <em>test: dict</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/scripts/cantrip.html#print_latex_results"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.scripts.cantrip.print_latex_results" title="Permalink to this definition">¶</a></dt>
 <dd><p>Prints results in a LaTeX-style table to the console</p>
 <table class="docutils field-list" frame="void" rules="none">
 <col class="field-name" />
@@ -83,7 +83,7 @@ e.g., split(data, ‘8:1:1’) splits 80% as training, 10% as development, and 1
 
 <dl class="function">
 <dt id="src.scripts.cantrip.run_model">
-<code class="descname">run_model</code><span class="sig-paren">(</span><em>model: src.models.cantrip_model.CANTRIPModel</em>, <em>cohort: src.data.scribe_data.Cohort</em>, <em>args</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/scripts/cantrip.html#run_model"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.scripts.cantrip.run_model" title="Permalink to this definition">¶</a></dt>
+<code class="descname">run_model</code><span class="sig-paren">(</span><em>model: src.models.cantrip_model.CANTRIPModel</em>, <em>cohort: src.data.scribe_data.Cohort</em>, <em>args</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/scripts/cantrip.html#run_model"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.scripts.cantrip.run_model" title="Permalink to this definition">¶</a></dt>
 <dd><p>Run the given model using the given cohort and experimental settings contained in args.</p>
 <p>This function:
 (1) balanced the dataset
@@ -97,8 +97,43 @@ e.g., split(data, ‘8:1:1’) splits 80% as training, 10% as development, and 1
 </dd></dl>
 
 </div>
-<div class="section" id="src-scripts-svm-module">
-<h2>src.scripts.svm module<a class="headerlink" href="#src-scripts-svm-module" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="module-src.scripts.svm">
+<span id="src-scripts-svm-module"></span><h2>src.scripts.svm module<a class="headerlink" href="#module-src.scripts.svm" title="Permalink to this headline">¶</a></h2>
+<dl class="function">
+<dt id="src.scripts.svm.evaluate_classifier">
+<code class="descname">evaluate_classifier</code><span class="sig-paren">(</span><em>x</em>, <em>y_true</em>, <em>clf</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/scripts/svm.html#evaluate_classifier"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.scripts.svm.evaluate_classifier" title="Permalink to this definition">¶</a></dt>
+<dd><p>Evaluate the given classifier on x using y_true
+:param x: data to evaluate on
+:param y_true: true labels
+:param clf: classifier to evaluate
+:return: dictionary of metrics and their values</p>
+</dd></dl>
+
+<dl class="function">
+<dt id="src.scripts.svm.leaky_rule">
+<code class="descname">leaky_rule</code><span class="sig-paren">(</span><em>x</em>, <em>a=0.001</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/scripts/svm.html#leaky_rule"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.scripts.svm.leaky_rule" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="function">
+<dt id="src.scripts.svm.main">
+<code class="descname">main</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="modules/src/scripts/svm.html#main"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.scripts.svm.main" title="Permalink to this definition">¶</a></dt>
+<dd><p>Main method for the script. Parses arguments and calls run_model.</p>
+</dd></dl>
+
+<dl class="function">
+<dt id="src.scripts.svm.print_model_evaluation">
+<code class="descname">print_model_evaluation</code><span class="sig-paren">(</span><em>model</em>, <em>train</em>, <em>devel</em>, <em>test</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/scripts/svm.html#print_model_evaluation"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.scripts.svm.print_model_evaluation" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="function">
+<dt id="src.scripts.svm.run_model">
+<code class="descname">run_model</code><span class="sig-paren">(</span><em>model</em>, <em>args</em><span class="sig-paren">)</span><a class="reference internal" href="modules/src/scripts/svm.html#run_model"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#src.scripts.svm.run_model" title="Permalink to this definition">¶</a></dt>
+<dd><p>Train and run SVM
+:param model: classifier to train/evaluate
+:param args: commandline arguments
+:return: nothing</p>
+</dd></dl>
+
 </div>
 <div class="section" id="module-src.scripts">
 <span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-src.scripts" title="Permalink to this headline">¶</a></h2>
@@ -154,7 +189,7 @@ e.g., split(data, ‘8:1:1’) splits 80% as training, 10% as development, and 1
       &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.11</a>
       
       |
-      <a href="_sources/src.scripts.rst.txt"
+      <a href="sources/src.scripts.rst.txt"
           rel="nofollow">Page source</a>
     </div>
 

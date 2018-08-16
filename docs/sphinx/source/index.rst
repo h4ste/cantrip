@@ -13,6 +13,8 @@ Welcome to CANTRIP's documentation!
 .. automodule:: src
    :members:
 
+.. mdinclude:: ../../README.md
+
 Indices and tables
 ==================
 
