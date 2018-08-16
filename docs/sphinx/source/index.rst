@@ -10,7 +10,13 @@
 .. automodule:: src
    :members:
 
-.. mdinclude:: ../../../README.md
+reCurrent Additive Network for Temporal RIsk Prediction (CANTRIP)
+=================================================================
+
+A TensorFlow model for predicting temporal (disease) risk based on retrospective analysis of longitudinal clinical notes.
+
+Please check the website_ for more details.
+.. _website: https://h4ste.github.io/cantrip/
 
 Indices and tables
 ==================

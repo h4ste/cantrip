@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 from collections import Iterable
 
 import numpy as np
@@ -342,4 +343,4 @@ def main(argv):
 
 if __name__ == '__main__':
     tf.logging.set_verbosity(tf.logging.DEBUG)
-    tf.app.run(main)
+    sys.exit(main(sys.argv))
