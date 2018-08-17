@@ -8,12 +8,29 @@ A TensorFlow model for predicting temporal (disease) risk based on retrospective
 # Dependencies
 - Python >= 3.6
 - TensorFlow >= 1.9
+- numpy >= 1.13.3
+- scikit-learn >= 0.19.0
+- scipy >= 0.13.3
 
 # Installation
-To install, run
+First, install the required dependencies:
 ```bash
-$ python setup.py
+$ pip -r requirements.txt
 ```
+Then, install TensorFlow with or without gpu support:
+
+| CPU only | GPU Enabled |
+|---------:|-----------:|
+| `$ pip install tensorflow>=1.9.0` | `$ pip install tensorflow-gpu>=1.9.0` |
+
+Optionally install any of the below optional dependencies:
+
+| Dependency | Purpose |
+|-----------:|--------:|
+| tqdm       | pretty console progress logging |
+| tabulate   | printing LaTeX style results tables |
+
+---
 
 # Usage
 CANTRIP is evoked at the module level, with scripts for training and evaluating CANTRIP itself, or SVM/baseline models.
@@ -57,8 +74,7 @@ with optional arguments:
                         terms will be used
   --discrete-deltas     rather than encoding deltas as tanh(log(delta)),
                         discretize them into buckets: > 1 day, > 2 days, > 1
-                        week, etc.(we don't have enough data for this be
-                        useful)
+                        week, etc.
   --dropout DROPOUT     dropout used for all dropout layers (including the
                         vocabulary)
   --observation-embedding-size OBSERVATION_EMBEDDING_SIZE
@@ -91,7 +107,7 @@ with optional arguments:
   --print-latex-results
 ```
 And optional snapshot encoder arguments:
-```
+```bash
 Snapshot Encoder: RNN Flags:
   --snapshot-rnn-num-hidden SNAPSHOT_RNN_NUM_HIDDEN [SNAPSHOT_RNN_NUM_HIDDEN ...]
                         size of hidden layer(s) used for combining clinical
@@ -128,7 +144,7 @@ $ python -m src.scripts.svm [-h] --chronology-path CHRONOLOGY_PATH --vocabulary-
               [--final-only] [--discrete-deltas] [--kernel KERNEL]
 ```
 with optional arguments
-```
+```bash
   -h, --help            show this help message and exit
   --chronology-path CHRONOLOGY_PATH
                         path to cohort chronologies
@@ -146,7 +162,7 @@ with optional arguments
 ```
 
 ### Training and Evaluating Misc. Baselines
-Training and evaluating miscellanous SciKit: Learn baselines is done through:
+Training and evaluating miscellaneous SciKit: Learn baselines is done through:
 ```bash
 python -m src.scripts.baselines.py --chronology-path CHRONOLOGY_PATH --vocabulary-path VOCABULARY_PATH 
                     [--tdt-ratio TDT_RATIO]
@@ -168,6 +184,57 @@ with the following optional parameters:
                         discretize them into buckets: > 1 day, > 2 days, > 1
                         week, etc.
 ```
+
+---
+
+## Data format
+The `cantrip` script load chronology and vocabulary files. Chronology and vocabulary files are assumed to follow specific formats.
+
+### Chronology format
+The format of this chronology file is assumed to be as follows:
+
+    [external_patient_id]\t[chronology]
+
+where each ``[chronology]`` is encoded as as sequence of snapshots, separated by tabs:
+
+    [[snapshot]\t...]
+
+and each ``[snapshot]`` is encoded as:
+
+    [delta] [label] [observation IDs..]
+
+Note that snapshots are delimited by *spaces*, label must be 'true' or 'false', delta is represented in seconds
+since previous chronology, and observation IDs should be the IDs associated with the observation in the given
+vocabulary file.
+
+For example, the line:
+
+    11100004a   0 false 1104 1105 2300 25001    86400 false 1104 2300   172800 true 1104 2300 3500
+
+would indicate that patient with external ID '11100004a' had a chronology including 3 snapshots
+where:
+
+* the first snapshot was negative for pneumonia, had a delta of 0, and contained only three clinical
+  observations: those associated with vocabulary terms 1104, 1105, 2300, and 25001;
+* the second snapshot was negative for pneumonia, had a delta of 86400 seconds (1 day), and included only
+  two clinical observations: 1104 and 2300
+* the third snapshot was positive for pneumonia, had a delta of 172800 seconds (2 days), and included only
+  three clinical observations: 1104, 2300, and 3500
+  
+### Vocabulary format
+The vocabulary file is assumed to be formatted as follows:
+
+    [observation]\t[frequency]
+
+where the line number indicates the ID of the observation in the chronology (e.g., 1104), ``[observation]`` is a
+human-readable string describing the observation, and ``[frequency]`` is the frequency of that observation in
+the dataset (this value is only important if specifying a max_vocabulary_size as terms will be sorted in
+descending frequency before the cut-off is made)
+
+Note: as described in the AMIA paper , chronologies are truncated to terminate at the first positive label.
+Chronologies in which the first snapshot is positive or in which no snapshot is positive are discarded.
+
+---
  
 # Documentation
 [Sphinx](http://www.sphinx-doc.org/en/master/)-based Python documentation is available [here](https://h4ste.github.io/cantrip/sphinx/html/).
