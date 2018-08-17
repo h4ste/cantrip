@@ -89,7 +89,7 @@ with optional arguments:
   --print-latex-results
 ```
 And optional snapshot encoder arguments:
-```
+```bash
 Snapshot Encoder: RNN Flags:
   --snapshot-rnn-num-hidden SNAPSHOT_RNN_NUM_HIDDEN [SNAPSHOT_RNN_NUM_HIDDEN ...]
                         size of hidden layer(s) used for combining clinical
@@ -126,7 +126,7 @@ $ python -m src.scripts.svm [-h] --chronology-path CHRONOLOGY_PATH --vocabulary-
               [--final-only] [--discrete-deltas] [--kernel KERNEL]
 ```
 with optional arguments
-```
+```bash
   -h, --help            show this help message and exit
   --chronology-path CHRONOLOGY_PATH
                         path to cohort chronologies
@@ -144,7 +144,7 @@ with optional arguments
 ```
 
 ### Training and Evaluating Misc. Baselines
-Training and evaluating miscellanous SciKit: Learn baselines is done through:
+Training and evaluating miscellaneous SciKit: Learn baselines is done through:
 ```bash
 python -m src.scripts.baselines.py --chronology-path CHRONOLOGY_PATH --vocabulary-path VOCABULARY_PATH 
                     [--tdt-ratio TDT_RATIO]
@@ -173,7 +173,7 @@ Documentation on CANTRIP is provided at [here](https://h4ste.github.io/cantrip).
 
 # Structure
 - [src/data](src/data) Classes and utilities for loading clinical chronologies (and observation vocabularies from the disk); Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.data.html)
-- [src/models](src/models) TensorFlow implemenation of CANTRIP; Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.models.html)
+- [src/models](src/models) TensorFlow implementation of CANTRIP; Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.models.html)
     - [src/models/encoder](src/models/encoder/snapshot_encoder.py) TensorFlow implementation of clinical snapshot encoders; Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.models.encoder.html)
-    - [src/models/rnn_cell](src/models/encoder/rnn_cell.py) TensorFlow implementation of [Recurrent Additive Networks (RANs)](https://arxiv.org/abs/1705.07393) and Batch-normalized Gated Recurrent Units; Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.models.rnn_cell.html)
-- [src/scripts](src/models/scripts.py) Executable scripts for running and evaluating CANTRIP as well as SVM and other baseline systems on pneumonia risk predcition; Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.scripts.html)
+    - [src/models/rnn_cell](src/models/rnn_cell) TensorFlow implementation of [Recurrent Additive Networks (RANs)](https://arxiv.org/abs/1705.07393) and Batch-normalized Gated Recurrent Units; Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.models.rnn_cell.html)
+- [src/scripts](src/scripts) Executable scripts for running and evaluating CANTRIP as well as SVM and other baseline systems on pneumonia risk prediction; Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.scripts.html)
