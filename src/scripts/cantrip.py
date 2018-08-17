@@ -10,8 +10,12 @@ from tensorflow.python import debug as tf_debug
 from tensorflow.python.platform import gfile
 
 from sklearn.model_selection import train_test_split
-from tqdm import trange, tqdm
-from tabulate import tabulate
+
+try:
+    from tqdm import trange, tqdm
+except ImportError:
+    print('Package \'tqdm\' not installed. Falling back to simple progress display.')
+    from src.models.mock_tqdm import trange, tqdm
 
 from src.data import Cohort, encode_delta_discrete, encode_delta_continuous
 from src.models import CANTRIPModel, CANTRIPOptimizer, CANTRIPSummarizer
@@ -28,7 +32,7 @@ parser = argparse.ArgumentParser(description='train and evaluate CANTRIP using t
 parser.add_argument('--chronology-path', required=True, help='path to cohort chronologies')
 parser.add_argument('--vocabulary-path', required=True, help='path to cohort vocabulary')
 
-# Chronology datastructure parameters
+# Chronology data structure parameters
 parser.add_argument('--max-chron-len', type=int, default=7, metavar='L',
                     help='maximum number of snapshots per chronology')
 parser.add_argument('--max-snapshot-size', type=int, default=200, metavar='N',
@@ -42,7 +46,7 @@ parser.add_argument('--discrete-deltas', dest='delta_encoder', action='store_con
                          '(we don\'t have enough data for this be useful)')
 
 # CANTRIP: General parameters
-parser.add_argument('--dropout', type=float, default=0., help='dropout used for all dropout layers'
+parser.add_argument('--dropout', type=float, default=0.7, help='dropout used for all dropout layers'
                                                               ' (including the vocabulary)')
 
 # CANTRIP: Clinical Snapshot Encoder parameters
@@ -51,7 +55,7 @@ parser.add_argument('--observation-embedding-size', type=int, default=200,
 parser.add_argument('--snapshot-embedding-size', type=int, default=200,
                     help="dimensions of clinical snapshot encoding vectors")
 parser.add_argument('--snapshot-encoder', choices=['RNN', 'CNN', 'BAG', 'DAN', 'DENSE'],
-                    default='RNN', help='type of clinical snapshot encoder to use')
+                    default='DAN', help='type of clinical snapshot encoder to use')
 
 doc_encoder_rnn = parser.add_argument_group(title='Snapshot Encoder: RNN Flags')
 doc_encoder_rnn.add_argument('--snapshot-rnn-num-hidden', type=int, nargs='+', default=[200],
@@ -69,7 +73,7 @@ doc_encoder_cnn.add_argument('--snapshot-cnn-windows', type=int, nargs='?', defa
 doc_encoder_cnn.add_argument('--snapshot-cnn-kernels', type=int, default=1000, help='number of filters used in CNN')
 
 
-doc_encoder_dan = parser.add_argument_group(title='Snapshot Encoder: DAN Falgs')
+doc_encoder_dan = parser.add_argument_group(title='Snapshot Encoder: DAN Flags')
 doc_encoder_cnn.add_argument('--snapshot-dan-num-hidden-avg', type=int, nargs='+', default=[200, 200],
                              help='number of hidden units to use when refining the DAN average layer; '
                                   'multiple arguments results in multiple dense layers')
@@ -81,7 +85,7 @@ doc_encoder_cnn.add_argument('--snapshot-dan-num-hidden-obs', type=int, nargs='+
 parser.add_argument('--rnn-num-hidden', type=int, nargs='+', default=[100],
                     help='size of hidden layer(s) used for inferring the clinical picture; '
                          'multiple arguments result in multiple hidden layers')
-parser.add_argument('--rnn-cell-type', choices=CELL_TYPES, default='LSTM',
+parser.add_argument('--rnn-cell-type', choices=CELL_TYPES, default='RAN',
                     help='type of RNN cell to use for inferring the clinical picture')
 
 # Experimental setting parameters
@@ -92,8 +96,8 @@ parser.add_argument('--early-term', default=False, action='store_true', help='st
                                                                              'this is pretty much always a bad idea')
 
 # TensorFlow-specific settings
-parser.add_argument('--summary-dir', default='data/working/summaries')
-parser.add_argument('--checkpoint-dir', default='models/checkpoints')
+parser.add_argument('--summary-dir', default=os.path.join('data', 'working', 'summaries'))
+parser.add_argument('--checkpoint-dir', default=os.path.join('models', 'checkpoints'))
 parser.add_argument('--clear', default=False, action='store_true',
                     help='remove previous summary/checkpoints before starting this run')
 parser.add_argument('--debug', default=None, help='hostname:port of TensorBoard debug server')
@@ -264,6 +268,10 @@ def run_model(model: CANTRIPModel, cohort: Cohort, args):
             print_latex_results(best_train_metrics, best_devel_metrics, best_test_metrics)
 
 
+# Facilitates lazy loading of tabulate module
+tabulate = None
+
+
 def print_latex_results(train: dict, devel: dict, test: dict):
     """Prints results in a LaTeX-style table to the console
 
@@ -273,10 +281,20 @@ def print_latex_results(train: dict, devel: dict, test: dict):
     :return: nothing
     """
 
+    # Lazy load tabulate
+    global tabulate
+    if tabulate is None:
+        try:
+            from tabulate import tabulate
+        except ImportError:
+            print('Printing latex results requires the `tabulate` package. Tabulate can be installed by running: \n'
+                  '$pip install tabulate')
+            sys.exit(1)
+
     def _evaluate(dataset: dict, metrics=None):
         """
         Fetch the given metrics from the given dataset metric dictionary in the order they were given
-        :param dataset: dictionary containg metrics for a specific dataset
+        :param dataset: dictionary containing metrics for a specific dataset
         :param metrics: list of metric names to fetch
         :return: list of metric values
         """

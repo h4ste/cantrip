@@ -11,7 +11,12 @@ Todo: Find a better way to represent delta encoder range dimensionality
 from typing import Optional, Dict, Union, List, Text, Iterable
 
 import numpy as np
-from tqdm import tqdm
+
+try:
+    from tqdm import trange, tqdm
+except ImportError:
+    print('Package \'tqdm\' not installed. Falling back to simple progress display.')
+    from src.models.mock_tqdm import trange, tqdm
 
 from src.models import CANTRIPModel
 

@@ -152,7 +152,7 @@ class RANCell(RNNCell):
     def __call__(self, inputs, state, scope=None):
         with vs.variable_scope(scope or "ran_cell", reuse=self._reuse):
             with vs.variable_scope("gates"):
-                c, h, w = state
+                c, h = state
                 gates = tf.nn.sigmoid(_linear([inputs, h], 2 * self._num_units, True, normalize=self._normalize))
                 i, f = array_ops.split(value=gates, num_or_size_splits=2, axis=1)
 

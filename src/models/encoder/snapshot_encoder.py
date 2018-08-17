@@ -22,18 +22,18 @@ def rnn_encoder(num_hidden, cell_fn=GRUCell):
     :return: rnn_encoder function
     """
 
-    def _rnn_encoder(model):
+    def _rnn_encoder(model: CANTRIPModel):
         with tf.variable_scope('rnn_encoder'):
             # Embed clinical observations
-            embedded_observations = embedding_layer(model.words, model.vocabulary_size, model.embedding_size)
+            embedded_observations = embedding_layer(model.observations, model.vocabulary_size, model.embedding_size)
 
             # Reshape to (batch * seq_len) x doc_len x embedding
             flattened_embedded_obs = tf.reshape(embedded_observations,
                                                 [model.batch_size * model.max_seq_len,
-                                                 model.max_doc_len,
+                                                 model.max_snapshot_size,
                                                  model.embedding_size],
                                                 name='flat_emb_obs')
-            flattened_snapshot_sizes = tf.reshape(model.doc_lengths, [model.batch_size * model.max_seq_len],
+            flattened_snapshot_sizes = tf.reshape(model.snapshot_sizes, [model.batch_size * model.max_seq_len],
                                                   name='flat_snapshot_sizes')
 
             # Apply RNN to all documents in all batches
