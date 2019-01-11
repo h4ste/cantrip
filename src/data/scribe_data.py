@@ -439,6 +439,11 @@ class Cohort(object):
                 # Each chronology is represented by [external_patient_id]\t[[snapshots]\t...]
                 subject_id, *snapshots = line.split('\t')
 
+                # We sometimes represent chronologies as subject_id:visit_id
+                delim = subject_id.find(':')
+                if delim > -1:
+                    subject_id = subject_id[:delim]
+
                 # If this is a new subject, initialize his or her list of chronologies to be empty
                 if subject_id not in cohort:
                     cohort[subject_id] = []
@@ -701,14 +706,16 @@ class ChronologyBatch(object):
                                self.snapshots,
                                self.snapshot_sizes)
 
-    def feed(self, model: CANTRIPModel):
+    def feed(self, model: CANTRIPModel, training=False):
         """Feed this chronology batch to a CANTRIPModel object
 
         :param model: CANTRIP model which will be fed the data in this batch
+        :param training: whether CANTRIP is in training or inference mode (i.e., whether to use dropout)
         :return: a feed dict for use with TensorFlow session.run()
         """
         return {model.observations: self.snapshots,
                 model.deltas: self.deltas,
                 model.snapshot_sizes: self.snapshot_sizes,
                 model.seq_lengths: self.seq_lens,
-                model.labels: self.labels}
+                model.labels: self.labels,
+                model.training: training}
