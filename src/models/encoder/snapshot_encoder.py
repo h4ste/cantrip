@@ -50,7 +50,7 @@ def rnn_encoder(num_hidden, cell_fn=GRUCell):
     return _rnn_encoder
 
 
-def cnn_encoder(windows=None, kernels=1000, dropout=0.0):
+def cnn_encoder(windows=None, kernels=1000):
     """
     Creates a CNN encoder with the given number of windows, kernels, and dropout
     :param windows: number of consecutive observations to consider; defaults to [3, 4, 5]
@@ -75,8 +75,10 @@ def cnn_encoder(windows=None, kernels=1000, dropout=0.0):
             # Apply parallel convolutional and pooling layers
             outputs = []
             for n in windows:
-                dropout_layer = tf.nn.dropout(flattened_embedded_obs, 1. - dropout)
-                conv_layer = tf.layers.conv1d(dropout_layer, kernels,
+                if model.dropout > 0:
+                    flattened_embedded_obs = tf.layers.dropout(flattened_embedded_obs,
+                                                               rate=model.dropout, training=model.training)
+                conv_layer = tf.layers.conv1d(flattened_embedded_obs, kernels,
                                               kernel_size=n,
                                               activation=tf.nn.leaky_relu,
                                               name="conv_%dgram" % n)
@@ -88,7 +90,7 @@ def cnn_encoder(windows=None, kernels=1000, dropout=0.0):
             output = tf.concat(outputs, axis=-1)
 
             # Embed concat output with leaky relu
-            embeddings = tf.layers.dense(output, model.embedding_size, activation=tf.nn.leaky_relu)
+            embeddings = tf.layers.dense(output, model.embedding_size, activation=tf.nn.relu)
 
             # Reshape back to [batch_size x max_seq_len x encoding_size]
             return tf.reshape(embeddings, [model.batch_size, model.max_seq_len, model.embedding_size])
@@ -151,7 +153,8 @@ def dense_encoder(model: CANTRIPModel):
                                                      model.vocabulary_size],
                                               name='flat_emb_obs')
             # Dropout for fun
-            flat_emb_bags = tf.nn.dropout(flat_emb_bags, model.dropout)
+            if model.dropout > 0:
+                flat_emb_bags = tf.layers.dropout(flat_emb_bags, rate=model.dropout, training=model.training)
 
             # Sparse to dense projection
             flat_doc_embeddings = tf.sparse_tensor_dense_matmul(flat_emb_bags, embedded_observations,

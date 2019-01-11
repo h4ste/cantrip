@@ -1,7 +1,7 @@
 import argparse
 import os
 import sys
-from collections import Iterable
+from collections import Iterable, namedtuple
 
 import numpy as np
 
@@ -46,8 +46,9 @@ parser.add_argument('--discrete-deltas', dest='delta_encoder', action='store_con
                          '(we don\'t have enough data for this be useful)')
 
 # CANTRIP: General parameters
-parser.add_argument('--dropout', type=float, default=0.7, help='dropout used for all dropout layers'
-                                                              ' (including the vocabulary)')
+parser.add_argument('--dropout', type=float, default=0.7, help='dropout used for all dropout layers')
+parser.add_argument('--vocab-dropout', type=float, default=0.7,
+                    help='dropout used for vocabulary-level dropout (overrides --dropout)')
 
 # CANTRIP: Clinical Snapshot Encoder parameters
 parser.add_argument('--observation-embedding-size', type=int, default=200,
@@ -104,6 +105,7 @@ parser.add_argument('--debug', default=None, help='hostname:port of TensorBoard 
 
 parser.add_argument('--print-performance', default=False, action='store_true')
 parser.add_argument('--print-latex-results', default=False, action='store_true')
+parser.add_argument('--print-tabbed-results', default=False, action='store_true')
 
 
 # TODO: break the file into separate training/testing/inference phases
@@ -212,10 +214,10 @@ def run_model(model: CANTRIPModel, cohort: Cohort, args):
                         # training metrics and get metrics/summaries for the current batch and request the new global
                         # step number (used by TensorBoard to coordinate metrics across different runs
                         _, batch_summary, batch_metrics, global_step = sess.run(
-                            [[optimizer.train_op, summarizer.train.metric_ops],  # All fetches we arent going to read
+                            [[optimizer.train_op, summarizer.train.metric_ops],  # All fetches we aren't going to read
                              summarizer.batch_summary, summarizer.batch_metrics,
                              optimizer.global_step],
-                            batch.feed(model))
+                            batch.feed(model, training=True))
 
                         # Update tqdm progress indicator with current training metrics on this batch
                         batch_log.set_postfix(batch_metrics)
@@ -231,7 +233,7 @@ def run_model(model: CANTRIPModel, cohort: Cohort, args):
                 sess.run(summarizer.devel.reset_op)
                 # Update local variables used to compute development metrics as we process each batch
                 for devel_batch in cohort[devel].make_epoch_batches(**vars(args)):
-                    sess.run([summarizer.devel.metric_ops], devel_batch.feed(model))
+                    sess.run([summarizer.devel.metric_ops], devel_batch.feed(model, training=False))
                 # Compute the development metrics
                 devel_metrics, devel_summary = sess.run([summarizer.devel.metrics, summarizer.devel.summary])
                 # Update training progress bar to indicate current performance on development set
@@ -242,7 +244,7 @@ def run_model(model: CANTRIPModel, cohort: Cohort, args):
                 # Evaluate testing performance exactly as described above for development
                 sess.run(summarizer.test.reset_op)
                 for batch in cohort[test].make_epoch_batches(**vars(args)):
-                    sess.run([summarizer.test.metrics, summarizer.test.metric_ops], batch.feed(model))
+                    sess.run([summarizer.test.metrics, summarizer.test.metric_ops], batch.feed(model, training=False))
                 test_metrics, test_summary = sess.run([summarizer.test.metrics, summarizer.test.summary])
                 summary_writer.add_summary(test_summary, global_step=global_step)
 
@@ -264,20 +266,24 @@ def run_model(model: CANTRIPModel, cohort: Cohort, args):
             print('Devel: %s' % str(best_devel_metrics))
             print('Test: %s' % str(best_test_metrics))
 
+        if args.print_tabbed_results:
+            print_table_results(best_train_metrics, best_devel_metrics, best_test_metrics, 'simple')
+
         if args.print_latex_results:
-            print_latex_results(best_train_metrics, best_devel_metrics, best_test_metrics)
+            print_table_results(best_train_metrics, best_devel_metrics, best_test_metrics, 'latex_booktabs')
+
 
 
 # Facilitates lazy loading of tabulate module
 tabulate = None
 
-
-def print_latex_results(train: dict, devel: dict, test: dict):
-    """Prints results in a LaTeX-style table to the console
+def print_table_results(train: dict, devel: dict, test: dict, tablefmt):
+    """Prints results in a table to the console
 
     :param train: training metrics
     :param devel: development metrics
     :param test: testing metrics
+    :param tablefmt: table format for use with tabular
     :return: nothing
     """
 
@@ -291,7 +297,7 @@ def print_latex_results(train: dict, devel: dict, test: dict):
                   '$pip install tabulate')
             sys.exit(1)
 
-    def _evaluate(dataset: dict, metrics=None):
+    def _evaluate(dataset: dict, name: str, metrics=None):
         """
         Fetch the given metrics from the given dataset metric dictionary in the order they were given
         :param dataset: dictionary containing metrics for a specific dataset
@@ -299,15 +305,17 @@ def print_latex_results(train: dict, devel: dict, test: dict):
         :return: list of metric values
         """
         if metrics is None:
-            metrics = ['Accuracy', 'Precision', 'Recall', 'F1', 'AUROC']
-        return [dataset[metric] for metric in metrics]
+            metrics = ['Accuracy', 'AUROC', 'Precision', 'Recall', 'F1', 'F2']
+        measures = [dataset[metric] for metric in metrics]
+        measures.insert(0, name)
+        return measures
 
     # Create a LaTeX table using tabulate
-    table = tabulate([_evaluate(train),
-                      _evaluate(devel),
-                      _evaluate(test)],
-                     headers=['Acc.', 'P', 'R', 'F1', 'AUC'],
-                     tablefmt='latex')
+    table = tabulate([_evaluate(train, 'train'),
+                      _evaluate(devel, 'devel'),
+                      _evaluate(test, 'test')],
+                     headers=['Data', 'Acc.', 'AUC', 'P', 'R', 'F1', 'F2'],
+                     tablefmt=tablefmt)
 
     print(table)
 

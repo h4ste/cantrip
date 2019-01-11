@@ -5,9 +5,9 @@ from tensorflow.contrib.rnn import LayerNormBasicLSTMCell
 from tensorflow.nn.rnn_cell import BasicLSTMCell, GRUCell
 
 from src.models.layers import rnn_layer
-from src.models.rnn_cell import SimpleRANCell, RANCell, LayerNormGRUCell
+from src.models.rnn_cell import SimpleRANCell, RANCell, LayerNormGRUCell, InterpretableSimpleRANCell
 
-CELL_TYPES = ['SRAN', 'RAN', 'RAN-LN', 'LSTM', 'LSTM-LN', 'GRU', 'GRU-LN']
+CELL_TYPES = ['SRAN', 'IRAN', 'RAN', 'RAN-LN', 'LSTM', 'LSTM-LN', 'GRU', 'GRU-LN']
 
 
 class CANTRIPModel(object):
@@ -29,6 +29,7 @@ class CANTRIPModel(object):
         snapshot_encoder (function): a callable function which adds clinical snapshot encoding operations to the
             TensorFlow graph; see src.models.encoder for options
         dropout (float): the dropout rate used in all dropout layers
+        vocab_dropout (float): the vocabulary dropout rate (defaults to dropout)
         num_classes (int): the number of classes -- this should be two.
 
         observations: a tf.Tensor with shape [batch_size x max_seq_len x max_snapshot_size] and type tf.int32 containing
@@ -61,6 +62,7 @@ class CANTRIPModel(object):
                  batch_size: int,
                  snapshot_encoder: Callable[['CANTRIPModel'], tf.Tensor],
                  dropout: float = 0.,
+                 vocab_dropout: float = None,
                  num_classes: int = 2):
         """Inits a new CANTRIP model with the given model parameters
         :param max_seq_len: the maximum number of clinical snapshots used in any mini-batch
@@ -88,6 +90,7 @@ class CANTRIPModel(object):
         self.num_classes = num_classes
         self.delta_encoding_size = delta_encoding_size
         self.dropout = dropout
+        self.vocab_dropout = vocab_dropout or dropout
         self.cell_type = cell_type
 
         # Build computation graph
@@ -116,19 +119,22 @@ class CANTRIPModel(object):
         # Label
         self.labels = tf.placeholder(tf.int32, [self.batch_size], name="labels")
 
+        # Training
+        self.training = tf.placeholder(tf.bool, name="training")
+
     def _add_seq_rnn(self, cell_type: str):
         """Add the clinical picture inference module; implemented in as an RNN. """
         with tf.variable_scope('sequence'):
             # Add dropout on deltas
             if self.dropout > 0:
-                self.deltas = tf.nn.dropout(self.deltas, keep_prob=self.dropout)
+                self.deltas = tf.layers.dropout(self.deltas, rate=self.dropout, training=self.training)
 
             # Concat observation_t and delta_t (deltas are already shifted by one)
             self.x = tf.concat([self.snapshot_encodings, self.deltas], axis=-1, name='rnn_input_concat')
 
             # Add dropout on concatenated inputs
             if self.dropout > 0:
-                self.x = tf.nn.dropout(self.x, 1 - self.dropout)
+                self.x = tf.layers.dropout(self.x, rate=self.dropout, training=self.training)
 
             _cell_types = {
                 # Original RAN from https://arxiv.org/abs/1705.07393
@@ -137,6 +143,8 @@ class CANTRIPModel(object):
                 # Super secret simplified RAN variant from Eq. group (2) in https://arxiv.org/abs/1705.07393
                 'SRAN': lambda num_cells: SimpleRANCell(self.x.shape[-1]),
                 'SRAN-LN': lambda num_cells: SimpleRANCell(self.x.shape[-1], normalize=True),
+                'IRAN': lambda num_cells: InterpretableSimpleRANCell(self.x.shape[-1]),
+                'IRAN-LN': lambda num_cells: InterpretableSimpleRANCell(self.x.shape[-1], normalize=True),
                 'LSTM': BasicLSTMCell,
                 'LSTM-LN': LayerNormBasicLSTMCell,
                 'GRU': GRUCell,
@@ -149,11 +157,19 @@ class CANTRIPModel(object):
             self.cell_fn = _cell_types[cell_type]
 
             # Compute weights AND final RNN output if looking at RANv2 variants
-            self.seq_final_output = rnn_layer(self.cell_fn, self.num_hidden, self.x, self.seq_lengths)
+            if cell_type.startswith('IRAN'):
+                self.seq_final_output, self.rnn_weights = rnn_layer(self.cell_fn, self.num_hidden,
+                                                                    self.x,
+                                                                    self.seq_lengths,
+                                                                    return_interpretable_weights=True)
+            else:
+                self.seq_final_output = rnn_layer(self.cell_fn, self.num_hidden, self.x, self.seq_lengths,
+                                                  return_interpretable_weights=False)
 
             # Even more fun dropout
             if self.dropout > 0:
-                self.seq_final_output = tf.nn.dropout(self.seq_final_output, 1 - self.dropout)
+                self.seq_final_output = tf.layers.dropout(self.seq_final_output,
+                                                          rate=self.dropout, training=self.training)
 
         # Convert to sexy logits
         self.logits = tf.layers.dense(self.seq_final_output, units=self.num_classes,
@@ -210,6 +226,7 @@ class CANTRIPSummarizer(object):
         self.accuracy = (self.tp + self.tn) / model.batch_size
         self.specificity = self.tn / (self.tn + self.fp)
         self.f1 = 2 * self.precision * self.recall / (self.precision + self.recall)
+        self.f2 = 5 * self.precision * self.recall / (4 * self.precision + self.recall)
 
         # Dict of all metrics to make fetching more convenient
         self.batch_metrics = {
@@ -222,6 +239,7 @@ class CANTRIPSummarizer(object):
             'Accuracy': self.accuracy,
             'Specificity': self.specificity,
             'F1': self.f1,
+            'F2': self.f2,
             'Loss': optimizer.loss
         }
 
@@ -255,6 +273,7 @@ class _CANTRIPModeSummarizer(object):
             p, p_op = tf.metrics.precision(model.labels, model.y)
             r, r_op = tf.metrics.recall(model.labels, model.y)
             f1 = 2 * p * r / (p + r)
+            f2 = 5 * p * r / (4 * p + r)
 
             # Streaming, epoch-level confusion matrix information
             with tf.name_scope('confusion_matrix'):
@@ -288,7 +307,8 @@ class _CANTRIPModeSummarizer(object):
                 'AUPRC': auprc,
                 'Precision': p,
                 'Recall': r,
-                'F1': f1
+                'F1': f1,
+                'F2': f2,
             }
 
             # TensorFlow operations that need to be run to update the epoch-level metrics on each batch

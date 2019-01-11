@@ -1,7 +1,10 @@
 """Recurrent Additive Network memory cell implementations.
 """
+import numpy as np
 
 import tensorflow as tf
+from tensorflow.python.eager import context
+from tensorflow.python.framework import ops
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import math_ops
@@ -169,3 +172,93 @@ class RANCell(RNNCell):
             new_state = RANStateTuple(new_c, new_h)
             output = new_h
         return output, new_state
+
+
+class InterpretableRANStateTuple(object):
+    __slots__ = ('c', '_i_list', '_f_list', 'w')
+
+    def __init__(self, c, i_list, f_list, w_list):
+        self.c = c
+        self._i_list = i_list
+        self._f_list = f_list
+        self.w = w_list
+
+    @classmethod
+    def zero(cls, batch_size, state_size, dtype):
+        return InterpretableRANStateTuple(
+            c=tf.zeros([batch_size, state_size], dtype=dtype),
+            i_list=[],
+            f_list=[],
+            w_list=[]
+        )
+
+    @classmethod
+    def succeed(cls, c, i, f, prev: 'InterpretableRANStateTuple'):
+        f_list = prev._f_list + [f]
+        i_list = prev._i_list + [i]
+        return InterpretableRANStateTuple(
+            c=c,
+            f_list=f_list,
+            i_list=i_list,
+            w_list=prev.w + InterpretableRANStateTuple._calc_weights(f=f_list, i=i_list)
+        )
+
+    @staticmethod
+    def _calc_weights(i, f):
+        t = len(i)
+        w = np.zeros(t)
+        for j in range(t):
+            w[j] = i[j]
+            for k in range(j + 1, t):
+                w[j] *= f[k]
+        return w
+
+    @property
+    def dtype(self):
+        return self.c.dtype
+
+
+# noinspection PyAbstractClass,PyMissingConstructor
+class InterpretableSimpleRANCell(RNNCell):
+    """Recurrent Additive Networks (cf. https://arxiv.org/abs/1705.07393).
+
+    This is an implementation of the simplified RAN cell described in Equation group (2)."""
+    def __init__(self, num_units, input_size=None, normalize=False, reuse=None):
+        if input_size is not None:
+            logging.warn("%s: The input_size parameter is deprecated.", self)
+        self._normalize = normalize
+        self._num_units = num_units
+        self._reuse = reuse
+
+    def zero_state(self, batch_size, dtype):
+        state_size = self._num_units
+        is_eager = context.executing_eagerly()
+        if is_eager and hasattr(self, "_last_zero_state"):
+            (last_state_size, last_batch_size, last_dtype,
+             last_output) = getattr(self, "_last_zero_state")
+            if (last_batch_size == batch_size and
+                    last_dtype == dtype and
+                    last_state_size == state_size):
+                return last_output
+
+        with ops.name_scope(type(self).__name__ + "ZeroState", values=[batch_size]):
+            output = InterpretableRANStateTuple.zero(batch_size, state_size, dtype)
+        if is_eager:
+            # noinspection PyAttributeOutsideInit
+            self._last_zero_state = (state_size, batch_size, dtype, output)
+        return output
+
+    @property
+    def output_size(self):
+        return self._num_units
+
+    def __call__(self, inputs, state: InterpretableRANStateTuple, scope=None):
+        with vs.variable_scope(scope or "ran_cell", reuse=self._reuse):
+            with vs.variable_scope("gates"):
+                c = state.c
+                value = tf.nn.sigmoid(_linear([c, inputs], 2 * self._num_units, True, normalize=self._normalize))
+                i, f = array_ops.split(value=value, num_or_size_splits=2, axis=1)
+
+            new_c = i * inputs + f * c
+
+        return InterpretableRANStateTuple.succeed(new_c, i, f, state)
