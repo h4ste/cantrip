@@ -181,36 +181,9 @@ class CANTRIPModel(object):
         self.y = tf.argmax(self.logits, axis=-1, output_type=tf.int32, name='class_predictions')
 
 
-class CANTRIPOptimizer(object):
-
-    def __init__(self, model: CANTRIPModel, sparse: bool = False, learning_rate: float = 1e-3):
-        """
-        Creates a new CANTRIPOptimizer responsible for optimizing CANTRIP. Allegedly, some day I will get around to
-        looking at other optimization strategies (e.g., sequence optimization).
-        :param model: a CANTRIPModel object
-        :param sparse: whether to use sparse softmax or not (I never actually tested this)
-        :param learning_rate: float, learning rate of the optimizer
-        """
-        self.model = model
-
-        # If sparse calculate sparsesoftmax directly from integer labels
-        if sparse:
-            self.loss = tf.losses.sparse_softmax_cross_entropy(model.labels, model.logits)
-        # If not sparse, convert labels to one hots and do softmax
-        else:
-            y_true = tf.one_hot(model.labels, model.num_classes, name='labels_onehot')
-            self.loss = tf.losses.softmax_cross_entropy(y_true, model.logits)
-
-        # Global step used for coordinating summarizes and checkpointing
-        self.global_step = tf.Variable(0, dtype=tf.int32, trainable=False, name='global_step')
-
-        # Training operation: fetch this to run a step of the adam optimizer!
-        self.train_op = tf.train.AdamOptimizer(learning_rate).minimize(self.loss, self.global_step)
-
-
 class CANTRIPSummarizer(object):
 
-    def __init__(self, model: CANTRIPModel, optimizer: CANTRIPOptimizer):
+    def __init__(self, model: CANTRIPModel, optimizer):
         self.model = model
         self.optimizer = optimizer
 
@@ -250,6 +223,7 @@ class CANTRIPSummarizer(object):
                 tf.summary.scalar('Precision', self.precision),
                 tf.summary.scalar('Recall', self.recall),
                 tf.summary.scalar('F1', self.f1),
+                tf.summary.scalar('F2', self.f2),
                 tf.summary.scalar('Specificity', self.specificity),
                 tf.summary.scalar('Loss', optimizer.loss)
             ])
@@ -297,6 +271,7 @@ class _CANTRIPModeSummarizer(object):
                 tf.summary.scalar('Precision', p),
                 tf.summary.scalar('Recall', r),
                 tf.summary.scalar('F1', f1),
+                tf.summary.scalar('F2', f2),
                 confusion_matrix
             ])
 
