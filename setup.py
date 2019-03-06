@@ -4,7 +4,7 @@ from setuptools import find_packages
 
 setup(
     name='CANTRIP',
-    version='0.1.1',
+    version='2.0.1',
     author='Travis R. Goodwin',
     author_email='travis.goodwin@nih.gov',
     description='TensorFlow implementation of reCurrent Additive Network for Temporal RIsk Prediction',
