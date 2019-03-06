@@ -19,6 +19,7 @@ def embedding_layer(inputs, vocab_size, embedding_size, dropout=0):
         embeddings = create_embeddings(vocab_size, embedding_size, dropout)
         return tf.nn.embedding_lookup(embeddings, inputs)
 
+
 def dense_to_sparse(tensor):
     shape = tensor.get_shape()
     indices = tf.where(tf.not_equal(tensor, 0))
