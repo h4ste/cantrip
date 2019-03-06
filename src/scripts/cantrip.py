@@ -18,7 +18,7 @@ except ImportError:
     from src.models.mock_tqdm import trange, tqdm
 
 from src.data import Cohort, encode_delta_discrete, encode_delta_continuous
-from src.models import CANTRIPModel, CANTRIPOptimizer, CANTRIPSummarizer
+from src.models import CANTRIPModel, CANTRIPOptimizer, CANTRIPSummarizer, BERTOptimizer
 from src.models.cantrip_model import CELL_TYPES
 from src.models.encoder import rnn_encoder, cnn_encoder, bag_encoder, dan_encoder, dense_encoder
 from src.models.util import make_dirs_quiet, delete_dir_quiet
@@ -63,9 +63,8 @@ doc_encoder_rnn.add_argument('--snapshot-rnn-num-hidden', type=int, nargs='+', d
                              help='size of hidden layer(s) used for combining clinical obserations to produce the '
                                   'clinical snapshot encoding; multiple arguments result in multiple hidden layers')
 doc_encoder_rnn.add_argument('--snapshot-rnn-cell-type', choices=['LSTM', 'LSTM-LN', 'GRU', 'GRU-LN', 'RAN', 'RAN-LN'],
-                             nargs='+', default=[200],
-                             help='size of hidden layer(s) used for combining clinical observations to produce the '
-                                  'clinical snapshot encoding; multiple arguments result in multiple hidden layers')
+                             default='GRU',
+                             help='type of cell to use when encoding snapshots')
 
 doc_encoder_cnn = parser.add_argument_group(title='Snapshot Encoder: CNN Flags')
 doc_encoder_cnn.add_argument('--snapshot-cnn-windows', type=int, nargs='?', default=[3, 4, 5],
@@ -107,6 +106,10 @@ parser.add_argument('--print-performance', default=False, action='store_true')
 parser.add_argument('--print-latex-results', default=False, action='store_true')
 parser.add_argument('--print-tabbed-results', default=False, action='store_true')
 
+parser.add_argument('--optimizer', choices=['cantrip', 'bert'], default='cantrip', help='type of optimizer to use')
+
+parser.add_argument('--init-lr', default=1e-4, type=float, help='initial learning rate')
+
 
 # TODO: break the file into separate training/testing/inference phases
 parser.add_argument('--mode', choices=['TRAIN'], default='TRAIN', help=argparse.SUPPRESS)
@@ -131,7 +134,7 @@ def make_train_devel_test_split(data: Iterable, ratio: str) -> (Iterable, Iterab
     return _train, _devel, _test
 
 
-def run_model(model: CANTRIPModel, cohort: Cohort, args):
+def run_model(model: CANTRIPModel, raw_cohort: Cohort, args):
     """
     Run the given model using the given cohort and experimental settings contained in args.
 
@@ -141,20 +144,20 @@ def run_model(model: CANTRIPModel, cohort: Cohort, args):
     (3) trains CANTRIP and saves checkpoint/summaries for TensorBoard
     (4) evaluates CANTRIP on the development and testing set
     :param model: an instantiated CANTRIP model
-    :param cohort: the cohort to use for this experimental run
+    :param raw_cohort: the cohort to use for this experimental run
     :param args: command-line arguments specifying model/experiment parameters
     :return: nothing
     """
 
     # Balance the cohort to have an even number of positive/negative chronologies for each patient
-    cohort = cohort.balance_chronologies()
+    cohort = raw_cohort.balance_chronologies()
 
     # Split into training:development:testing
     train, devel, test = make_train_devel_test_split(cohort.patients(), args.tdt_ratio)
 
     # Save summaries and checkpoints into the directories passed to the script
-    model_summaries_dir = os.path.join(args.summary_dir, args.rnn_cell_type, args.snapshot_encoder)
-    model_checkpoint_dir = os.path.join(args.checkpoint_dir, args.rnn_cell_type, args.snapshot_encoder)
+    model_summaries_dir = os.path.join(args.summary_dir, args.optimizer, args.rnn_cell_type, args.snapshot_encoder)
+    model_checkpoint_dir = os.path.join(args.checkpoint_dir, args.optimizer, args.rnn_cell_type, args.snapshot_encoder)
 
     # Clear any previous summaries/checkpoints if asked
     if args.clear:
@@ -166,11 +169,25 @@ def run_model(model: CANTRIPModel, cohort: Cohort, args):
     make_dirs_quiet(model_checkpoint_dir)
 
     # Instantiate CANTRIP optimizer and summarizer classes
-    optimizer = CANTRIPOptimizer(model)
+    if args.optimizer == 'cantrip':
+        optimizer = CANTRIPOptimizer(model)
+    elif args.optimizer == 'bert':
+        epoch_steps = len(cohort[train].make_epoch_batches(**vars(args)))
+        optimizer = BERTOptimizer(model,
+                                  num_train_steps=epoch_steps * args.num_epochs,
+                                  num_warmup_steps=epoch_steps * 3,
+                                  init_lr=args.init_lr)
+        print('Created BERT-like optimizer with initial learning rate of %f' % args.init_lr)
+    else:
+        parser.error('Invalid optimizer specified: %s' % args.optimizer)
+
+    # noinspection PyUnboundLocalVariable
     summarizer = CANTRIPSummarizer(model, optimizer)
 
     # Now that everything has been defined in TensorFlow's computation graph, initialize our model saver
     saver = tf.train.Saver(tf.global_variables())
+
+    first_cohort = cohort
 
     # Tell TensorFlow to wake up and get ready to rumble
     with tf.Session() as sess:
@@ -207,7 +224,10 @@ def run_model(model: CANTRIPModel, cohort: Cohort, args):
                 global_step, _ = sess.run([optimizer.global_step, summarizer.train.reset_op])
                 # Log our progress on the current epoch using tqdm cohort.make_epoch_batches shuffles the order of
                 # chronologies and prepares them  into mini-batches with zero-padding if needed
-                with tqdm(cohort[train].make_epoch_batches(**vars(args)), desc='Epoch %d' % (i + 1)) as batch_log:
+                total_loss = 0.
+                batches = cohort[train].make_epoch_batches(**vars(args))
+                num_batches = len(batches)
+                with tqdm(batches, desc = 'Epoch %d' % (i + 1)) as batch_log:
                     # Iterate over each batch
                     for j, batch in enumerate(batch_log):
                         # We train the model by evaluating the optimizer's training op. At the same time we update the
@@ -225,14 +245,20 @@ def run_model(model: CANTRIPModel, cohort: Cohort, args):
                         # Save batch-level summaries
                         summary_writer.add_summary(batch_summary, global_step=global_step)
 
+                        total_loss += batch_metrics['Loss']
+
                 # Save epoch-level training metrics and summaries
                 train_metrics, train_summary = sess.run([summarizer.train.metrics, summarizer.train.summary])
+                train_metrics['Loss'] = total_loss / num_batches
                 summary_writer.add_summary(train_summary, global_step=global_step)
+
+                # Re-sample chronologies in cohort
+                cohort = raw_cohort.balance_chronologies()
 
                 # Evaluate development performance
                 sess.run(summarizer.devel.reset_op)
                 # Update local variables used to compute development metrics as we process each batch
-                for devel_batch in cohort[devel].make_epoch_batches(**vars(args)):
+                for devel_batch in first_cohort[devel].make_epoch_batches(**vars(args)):
                     sess.run([summarizer.devel.metric_ops], devel_batch.feed(model, training=False))
                 # Compute the development metrics
                 devel_metrics, devel_summary = sess.run([summarizer.devel.metrics, summarizer.devel.summary])
@@ -241,9 +267,16 @@ def run_model(model: CANTRIPModel, cohort: Cohort, args):
                 # Save TensorBoard summary
                 summary_writer.add_summary(devel_summary, global_step=global_step)
 
+                def format_metrics(metrics: dict):
+                    return dict((key, '%6.4f' % value) for key, value in metrics.items())
+
+                train_log.write('Epoch %d. Train: %s | Devel: %s' % (i + 1,
+                                                                     format_metrics(train_metrics),
+                                                                     format_metrics(devel_metrics)))
+
                 # Evaluate testing performance exactly as described above for development
                 sess.run(summarizer.test.reset_op)
-                for batch in cohort[test].make_epoch_batches(**vars(args)):
+                for batch in first_cohort[test].make_epoch_batches(**vars(args)):
                     sess.run([summarizer.test.metrics, summarizer.test.metric_ops], batch.feed(model, training=False))
                 test_metrics, test_summary = sess.run([summarizer.test.metrics, summarizer.test.summary])
                 summary_writer.add_summary(test_summary, global_step=global_step)
@@ -273,9 +306,9 @@ def run_model(model: CANTRIPModel, cohort: Cohort, args):
             print_table_results(best_train_metrics, best_devel_metrics, best_test_metrics, 'latex_booktabs')
 
 
-
 # Facilitates lazy loading of tabulate module
 tabulate = None
+
 
 def print_table_results(train: dict, devel: dict, test: dict, tablefmt):
     """Prints results in a table to the console
@@ -305,7 +338,7 @@ def print_table_results(train: dict, devel: dict, test: dict, tablefmt):
         :return: list of metric values
         """
         if metrics is None:
-            metrics = ['Accuracy', 'AUROC', 'Precision', 'Recall', 'F1', 'F2']
+            metrics = ['Accuracy', 'AUROC', 'AUPRC', 'Precision', 'Recall', 'F1', 'F2']
         measures = [dataset[metric] for metric in metrics]
         measures.insert(0, name)
         return measures
@@ -314,7 +347,7 @@ def print_table_results(train: dict, devel: dict, test: dict, tablefmt):
     table = tabulate([_evaluate(train, 'train'),
                       _evaluate(devel, 'devel'),
                       _evaluate(test, 'test')],
-                     headers=['Data', 'Acc.', 'AUC', 'P', 'R', 'F1', 'F2'],
+                     headers=['Data', 'Acc.', 'AUROC', 'AUPRC', 'P', 'R', 'F1', 'F2'],
                      tablefmt=tablefmt)
 
     print(table)
