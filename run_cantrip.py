@@ -119,7 +119,7 @@ flags.DEFINE_boolean('print_latex_results', default=False,
 flags.DEFINE_boolean('print_tabbed_results', default=False,
                      help='Whether to print performance in a tab-separated table.')
 
-flags.DEFINE_enum('optimizer', enum_values=['CANTRIP', 'BERT'], default='CANTRIPq',
+flags.DEFINE_enum('optimizer', enum_values=['CANTRIP', 'BERT'], default='CANTRIP',
                   help='The type of optimizer to use when training CANTRIP.')
 
 flags.DEFINE_float('learning_rate', default=1e-4, lower_bound=np.nextafter(np.float32(0), np.float32(1)),
@@ -191,9 +191,9 @@ def run_model(model, raw_cohort, delta_encoder):
     nio.make_dirs_quiet(model_checkpoint_dir)
 
     # Instantiate CANTRIP optimizer and summarizer classes
-    if FLAGS.optimizer == 'cantrip':
+    if FLAGS.optimizer == 'CANTRIP':
         optimizer = optimization.CANTRIPOptimizer(model, learning_rate=FLAGS.learning_rate, sparse=True)
-    elif FLAGS.optimizer == 'bert':
+    elif FLAGS.optimizer == 'BERT':
         epoch_steps = len(cohort[train].make_epoch_batches(batch_size=FLAGS.batch_size,
                                                            max_snapshot_size=FLAGS.max_snapshot_size,
                                                            max_chrono_length=FLAGS.max_chrono_length,
