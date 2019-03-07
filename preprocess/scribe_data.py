@@ -2,13 +2,9 @@
 
 Attributes:
     _UNK (str): Module level private-variable containing the unknown token symbol
-    DELTA_BUCKETS (List[int]): list of temporal windows (in days) used for discrete delta encoding
-
-Todo: Find a better way to represent delta encoder range dimensionality
 """
 
-
-from typing import Optional, Dict, Union, List, Text, Iterable
+import typing
 
 import numpy as np
 
@@ -18,49 +14,62 @@ except ImportError:
     print('Package \'tqdm\' not installed. Falling back to simple progress display.')
     from mock_tqdm import trange, tqdm
 
-from src.models import CANTRIPModel
+from modeling import CANTRIPModel
 
 # Symbol used to denote unknown or out-of-vocabulary words
 _UNK = 'UNK'
 
-# Discrete time windows used when discretizing deltas (windows defined in days since prev. snapshot)
-DELTA_BUCKETS = [1, 7, 30, 60, 90, 182, 365, 730]
+
+class DeltaEncoder:
+
+    def encode_delta(self, elapsed_seconds: int) -> typing.Sequence[typing.Union[int, float]]:
+        raise NotImplementedError
+
+    @property
+    def size(self) -> int:
+        raise NotImplementedError
 
 
-def encode_delta_discrete(elapsed_seconds: int) -> List[int]:
-    """Encode deltas into discrete buckets indicating:
-        1. if elapsed_days <= 1 day
-        2. if elapsed_days <= 1 week
-        3. if elapsed_days <= 30 days (1 month)
-        4. if elapsed_days <= 60 days (2 months)
-        5. if elapsed_days <= 90 days (3 months)
-        6. if elapsed_days <= 182 days (half-a-year)
-        7. if elapsed_days <= 365 days (1 year)
-        8. if elapsed_days <= 730 days (2 years)
+class DiscreteDeltaEncoder(DeltaEncoder):
+    DELTA_BUCKETS = [1, 7, 30, 60, 90, 182, 365, 730]
 
-    :param elapsed_seconds: number of seconds between this clinical snapshot and the previous
-    :return: 8-dimensional discrete binary representation of elapsed_seconds
-    """
-    elapsed_days = elapsed_seconds / 60 / 60 / 24
-    return [1 if elapsed_days <= bucket else 0 for bucket in DELTA_BUCKETS]
+    def encode_delta(self, elapsed_seconds: int):
+        """Encode deltas into discrete buckets indicating:
+            1. if elapsed_days <= 1 day
+            2. if elapsed_days <= 1 week
+            3. if elapsed_days <= 30 days (1 month)
+            4. if elapsed_days <= 60 days (2 months)
+            5. if elapsed_days <= 90 days (3 months)
+            6. if elapsed_days <= 182 days (half-a-year)
+            7. if elapsed_days <= 365 days (1 year)
+            8. if elapsed_days <= 730 days (2 years)
 
+        :rtype: typing.List[int]
+        :param elapsed_seconds: number of seconds between this clinical snapshot and the previous
+        :type elapsed_seconds int
+        :return: 8-dimensional discrete binary representation of elapsed_seconds
+        """
+        elapsed_days = elapsed_seconds / 60 / 60 / 24
+        return [1 if elapsed_days <= bucket else 0 for bucket in DiscreteDeltaEncoder.DELTA_BUCKETS]
 
-# We use the size attribute to denote how many dimensions this delta encoding will have
-encode_delta_discrete.size = len(DELTA_BUCKETS)
-
-
-def encode_delta_continuous(elapsed_seconds: int):
-    """Encode deltas into discrete buckets
-
-    :param elapsed_seconds: number of seconds between this clinical snapshot and the previous
-    :return: tanh(log(elapsed days + 1))
-    """
-    elapsed_days = elapsed_seconds / 60 / 60 / 24
-    return np.tanh(np.log(elapsed_days + 1))
+    @property
+    def size(self):
+        return 8
 
 
-# We use the size attribute to denote how many dimensions this delta encoding will have
-encode_delta_continuous.size = 1
+class TanhLogDeltaEncoder(DeltaEncoder):
+    def encode_delta(self, elapsed_seconds: int):
+        """Encode deltas into discrete buckets
+
+        :param elapsed_seconds: number of seconds between this clinical snapshot and the previous
+        :return: tanh(log(elapsed days + 1))
+        """
+        elapsed_days = elapsed_seconds / 60 / 60 / 24
+        return np.tanh(np.log(elapsed_days + 1))
+
+    @property
+    def size(self):
+        return 1
 
 
 class Vocabulary(object):
@@ -74,21 +83,25 @@ class Vocabulary(object):
     """
 
     def __init__(self,
-                 term_index: Optional[Dict[Text, int]] = None,
-                 term_frequencies: Optional[Union[Dict[Text, int], Iterable[int]]] = None,
-                 terms: Optional[Iterable[int]] = None,
+                 term_index=None,
+                 term_frequencies=None,
+                 terms=None,
                  return_unk: bool = True):
         """Creates a vocabulary from a given term_index, term_frequency and term list
 
         :param term_index (dict, optional): dictionary mapping terms to integer term ids
             (term ids must start from zero and be contiguous)
+        :type term_index: typing.Optional[typing.Dict[typing.Text, int]]
         :param term_frequencies: a dict or list associating each term with its frequency. If passed as a dict,
             each key must be a term and each value must be a positive integer indicating the frequency of that term.
             If passed as a list,  each entry in the list is assumed to be a positive integer indicating the frequency
             of the term whose term ID matches the index of that entry
+        :type term_frequencies: typing.Optional[typing.Union[typing.Dict[typing.Text, int], typing.Iterable[int]]
         :param terms: a list of terms where the index of each term is the term ID of that term
+        :type terms: typing.Optional[typing.Iterable[int]]
         :param return_unk: whether the unknown term symbol should be returned when attempting to access
             out-of-vocabulary terms from this Vocabulary
+        :type return_unk: bool
         """
         if terms is None:
             self.terms = []
@@ -117,7 +130,7 @@ class Vocabulary(object):
                  vocabulary_file: str,
                  add_unk: bool = True,
                  return_unk: bool = True,
-                 max_vocab_size: Optional[int] = None):
+                 max_vocab_size: typing.Optional[int] = None):
         """Loads a Vocabulary object from a given vocabulary TSV file path.
 
         The TSV file is assumed to be formatted as follows::
@@ -162,10 +175,10 @@ class Vocabulary(object):
 
     @classmethod
     def from_terms(cls,
-                   terms: Iterable[Text],
+                   terms: typing.Sequence[typing.Text],
                    add_unk: bool = True,
                    return_unk: bool = True,
-                   max_vocab_size: Optional[int] = None):
+                   max_vocab_size: typing.Optional[int] = None):
         """Creates a vocabulary from an iterable of (possibly duplicate) terms.
 
         Unlike from_tsv, if max_vocab_size is specified the vocabulary will be created from the first max_vocab_size
@@ -233,7 +246,7 @@ class Vocabulary(object):
         elif self.return_unk:
             return self.term_index[_UNK]
         else:
-            raise KeyError('Term ID ' + term_id + ' not valid for vocabulary')
+            raise KeyError('Term ID %d not valid for vocabulary' % term_id)
 
     def lookup_term_by_term_id(self, term_id: int):
         """Look-up term by term by given term ID.
@@ -245,7 +258,7 @@ class Vocabulary(object):
         """
         return self.terms[term_id]
 
-    def lookup_term_id_by_term(self, term: Text) -> int:
+    def lookup_term_id_by_term(self, term: typing.Text) -> int:
         """Look-up term by term ID for given term.
 
         Returns unknown term symbol if this vocabulary was created with return_unk=True, otherwise raises KeyError
@@ -258,7 +271,7 @@ class Vocabulary(object):
         else:
             return self.term_index[term]
 
-    def add_term(self, term: Text) -> int:
+    def add_term(self, term: typing.Text) -> int:
         """Adds the given term to this vocabulary and returns its ID.
 
         If the given term is already in this vocabulary, its frequency will be updated. This method ignores any
@@ -367,7 +380,7 @@ class Cohort(object):
         return cls(patients, vocabulary, patient_vocabulary)
 
     @classmethod
-    def from_disk(cls, patient_vectors, vocabulary, max_vocab_size=50_000):
+    def from_disk(cls, patient_vectors, vocabulary, max_vocab_size=50000):
         """Load cohort from a given chronology file and vocabulary file or Vocabulary object.
 
         The format of this file is assumed to be as follows::
@@ -437,7 +450,8 @@ class Cohort(object):
 
                 # Load the subject id and list of snapshots
                 # Each chronology is represented by [external_patient_id]\t[[snapshots]\t...]
-                subject_id, *snapshots = line.split('\t')
+                fields = line.split('\t')
+                subject_id, snapshots = fields[0], fields[1:]
 
                 # We sometimes represent chronologies as subject_id:visit_id
                 delim = subject_id.find(':')
@@ -454,7 +468,8 @@ class Cohort(object):
                 observations = []
                 for snapshot in snapshots:
                     # Each snapshot is encoded as [delta] [label] [[observation ids] ...]
-                    delta, label, *observation_ids = snapshot.split(' ')
+                    fields = snapshot.split(' ')
+                    delta, label, observation_ids = fields[0], fields[1], fields[2:]
                     deltas.append(int(delta))
 
                     # Parse labels
@@ -500,7 +515,7 @@ class Cohort(object):
             sum([len(value) for value in cohort.values()]),  # Number of chronologies across all patients
             filtered_patients,  # Number of patients removed by chronology filtering
             filtered_chronologies)  # Number of chronologies removed across all patients
-        )
+              )
 
         # Convert the dict of external id -> [chronology] list into a Chronology object
         return cls.from_dict(cohort, vocabulary)
@@ -511,7 +526,7 @@ class Cohort(object):
 
     def __getitem__(self, subject_id):
         """Given an iterable or single external id, return the sub-cohort of patients associated with that/those ids"""
-        if isinstance(subject_id, Iterable):
+        if isinstance(subject_id, typing.Iterable):
             indices = [self._patient_vocabulary.lookup_term_id_by_term(term) for term in subject_id]
             return Cohort(self._patient_chronologies[indices],
                           self.vocabulary,
@@ -557,17 +572,19 @@ class Cohort(object):
             balanced_chronologies.append(balanced_visits)
         return Cohort(balanced_chronologies, self.vocabulary, self._patient_vocabulary)
 
-    def make_simple_classification(self, delta_encoder=encode_delta_continuous, final_only=False, **kwargs):
+    def make_simple_classification(self, delta_encoder=None, final_only=False):
         """Represent this cohort as a data and label vector amenable to Sci-kit learn.
 
         :param delta_encoder: type of delta encoding to use
+        :type delta_encoder: DeltaEncoder
         :param final_only: whether to convert each pair of successive chronologies to an example (default) or to only
             take the final positive and negative examples
-        :param kwargs:
         :return: an observation matrix X such that each row indicates a snapshot and each column indicates the
             presence of absence of that feature (with deltas encoded as an extra feature) and a label vector y
             indicating the label in the next snapshot
         """
+        if not delta_encoder:
+            delta_encoder = TanhLogDeltaEncoder()
         x = []
         y = []
         # Shuffle chronologies for science
@@ -586,23 +603,23 @@ class Cohort(object):
 
                 # Deltas and labels are already time-shifted when the cohort is created, so we don't need to shift them
                 # here
-                deltas = np.asarray([delta_encoder(chronology.deltas[i])])
+                deltas = np.asarray([delta_encoder.encode_delta(chronology.deltas[i])])
                 x.append(np.concatenate([deltas, bow], axis=0))
                 y.append(chronology.labels[i])
         return np.asarray(x), np.asarray(y)
 
-    def make_epoch_batches(self, batch_size, max_snapshot_size, max_chron_len, limit=None,
-                           delta_encoder=encode_delta_continuous, **kwargs):
+    def make_epoch_batches(self, batch_size, max_snapshot_size, max_chrono_length, limit=None,
+                           delta_encoder=None):
         """Create shuffled, equal-size mini-batches from the entire cohort.
 
-        :param batch_size: size of mini-batches (e.g., number of chronologies in each batch)
-        :param max_snapshot_size: maximum number of observations to consider in each snapshot (will be trimmed/zero-padded)
-        :param max_chron_len: maximum number of snapshots to consider in each chronology (will be trimmed/zero-padded)
-        :param limit: take only the first limit mini-batches, rather than all mini-batches for the cohort
-        :param delta_encoder: encoder to use for encoding deltas
-        :param kwargs: unused extra arguments (makes calling this method less tedious)
-        :return: a list of ChronologyBatch objects
+        :param batch_size: size of mini-batches (e.g., number of chronologies in each batch) :param
+        max_snapshot_size: maximum number of observations to consider in each snapshot (will be trimmed/zero-padded)
+        :param max_chrono_length: maximum number of snapshots to consider in each chronology (will be
+        trimmed/zero-padded) :param limit: take only the first limit mini-batches, rather than all mini-batches for
+        the cohort :param delta_encoder: encoder to use for encoding deltas :return: a list of ChronologyBatch objects
         """
+        if not delta_encoder:
+            delta_encoder = TanhLogDeltaEncoder()
 
         # Shuffle chronologies
         chronologies = np.random.permutation(self.chronologies())
@@ -622,7 +639,7 @@ class Cohort(object):
         # Encode each minibatch as a ChronologyBatch object
         chronology_batches = [ChronologyBatch.from_chronologies(batch,
                                                                 max_snapshot_size,
-                                                                max_chron_len,
+                                                                max_chrono_length,
                                                                 delta_encoder) for batch in batches]
 
         return chronology_batches
@@ -654,13 +671,15 @@ class ChronologyBatch(object):
         self.snapshot_sizes = snapshot_sizes
 
     @classmethod
-    def from_chronologies(cls, chronologies: Iterable[Chronology], max_snapshot_size, max_chron_len, delta_encoder):
+    def from_chronologies(cls, chronologies: typing.Sequence[Chronology], max_snapshot_size, max_chron_len,
+                          delta_encoder):
         """Create a zero-padded/trimmed ChronologyBatch from a given batch of Chronology objects
 
         :param chronologies: batch of Chronology objects
         :param max_snapshot_size: maximum number of observations for each chronology (used to trim/zero-pad)
         :param max_chron_len: maximum number of snapshots for each chronology (used to trim/zero-pad)
         :param delta_encoder: delta encoder to use
+        :type delta_encoder: DeltaEncoder
         :return: new ChronologyBatch object
         """
         # Infer batch size from the number of chronologies given to this method
@@ -680,7 +699,7 @@ class ChronologyBatch(object):
 
             # Convert deltas using delta encoder
             for j, delta in enumerate(chronology.deltas[:seq_end]):
-                deltas[i, j] = delta_encoder(delta)
+                deltas[i, j] = delta_encoder.encode_delta(delta)
 
             # Use final label as the prediction label for this chronology
             labels[i] = chronology.labels[seq_end - 1]

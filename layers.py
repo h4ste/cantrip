@@ -1,8 +1,5 @@
 import tensorflow as tf
-
-from tensorflow.nn.rnn_cell import LSTMStateTuple, MultiRNNCell
-
-from src.models.rnn_cell.ran_cell import InterpretableRANStateTuple
+import rnn_cell
 
 
 def create_embeddings(vocab_size, embedding_size, dropout, training=False):
@@ -33,7 +30,7 @@ def rnn_layer(cell_fn, num_hidden, inputs, lengths, return_interpretable_weights
 
     # Define type of RNN/memory cell
     if stacked:
-        cell = MultiRNNCell([cell_fn(num_units) for num_units in num_hidden])
+        cell = tf.nn.rnn_cell.MultiRNNCell([cell_fn(num_units) for num_units in num_hidden])
     else:
         cell = cell_fn(num_hidden)
 
@@ -50,7 +47,7 @@ def rnn_layer(cell_fn, num_hidden, inputs, lengths, return_interpretable_weights
         state = state[-1]
 
     if return_interpretable_weights:
-        if isinstance(state, InterpretableRANStateTuple):
+        if isinstance(state, rnn_cell.InterpretableRANStateTuple):
             return state.c, state.w
         else:
             raise TypeError('Can only interpret instances of InterpretableRANStateTuple')
@@ -58,7 +55,7 @@ def rnn_layer(cell_fn, num_hidden, inputs, lengths, return_interpretable_weights
     # The final state of a dynamic RNN, in TensorFlow, is either
     # (1) an LSTMStateTuple containing the final output and final memory state, or
     # (2) just the final state output
-    if isinstance(state, LSTMStateTuple):
+    if isinstance(state, tf.nn.rnn_cell.LSTMStateTuple):
         return state.h
     else:
         return state

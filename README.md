@@ -241,6 +241,6 @@ Documentation on CANTRIP is provided at [here](https://h4ste.github.io/cantrip).
 ## Structure
 - [src/data](src/data) Classes and utilities for loading clinical chronologies (and observation vocabularies from the disk); Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.data.html)
 - [src/models](src/models) TensorFlow implementation of CANTRIP; Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.models.html)
-    - [src/models/encoder](snapshot_encoding.py) TensorFlow implementation of clinical snapshot encoders; Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.models.encoder.html)
+    - [src/models/encoder](encoding.py) TensorFlow implementation of clinical snapshot encoders; Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.models.encoder.html)
     - [src/models/rnn_cell](rnn_cell) TensorFlow implementation of [Recurrent Additive Networks (RANs)](https://arxiv.org/abs/1705.07393) and Batch-normalized Gated Recurrent Units; Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.models.rnn_cell.html)
 - [src/scripts](src/scripts) Executable scripts for running and evaluating CANTRIP as well as SVM and other baseline systems on pneumonia risk prediction; Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.scripts.html)

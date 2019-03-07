@@ -1,15 +1,12 @@
-import argparse
 import os
 import sys
 from collections import Iterable
 
 import numpy as np
-
 import tensorflow as tf
+from sklearn.model_selection import train_test_split
 from tensorflow.python import debug as tf_debug
 from tensorflow.python.platform import gfile
-
-from sklearn.model_selection import train_test_split
 
 try:
     from tqdm import trange, tqdm
@@ -17,103 +14,122 @@ except ImportError:
     print('Package \'tqdm\' not installed. Falling back to simple progress display.')
     from mock_tqdm import trange, tqdm
 
-from src.data import Cohort, encode_delta_discrete, encode_delta_continuous
-from src.models import CANTRIPModel, CANTRIPOptimizer, CANTRIPSummarizer, BERTOptimizer
-from modelling import CELL_TYPES
-from src.models.encoder import rnn_encoder, cnn_encoder, bag_encoder, dan_encoder, dense_encoder
-from io import make_dirs_quiet, delete_dir_quiet
+import nio
+import modeling
+import preprocess
+import optimization
+import summarization
+import encoding
+
+# Facilitates lazy loading of tabulate module
+tabulate = None
 
 np.random.seed(1337)
+tf.set_random_seed(1337)
 
-parser = argparse.ArgumentParser(description='train and evaluate CANTRIP using the given chronologies and observation '
-                                             'vocabulary')
+flags = tf.flags
+
+FLAGS = flags.FLAGS
 
 # Data parameters
-parser.add_argument('--chronology-path', required=True, help='path to cohort chronologies')
-parser.add_argument('--vocabulary-path', required=True, help='path to cohort vocabulary')
+flags.DEFINE_string('data_dir', None,
+                    help='The input data directory. Should contain the chronology files (or other data files).')
+
+flags.DEFINE_string('vocab_file', None, help='The vocabulary file that chronologies were created with.')
 
 # Chronology data structure parameters
-parser.add_argument('--max-chron-len', type=int, default=7, metavar='L',
-                    help='maximum number of snapshots per chronology')
-parser.add_argument('--max-snapshot-size', type=int, default=200, metavar='N',
-                    help='maximum number of observations to consider per snapshot')
-parser.add_argument('--vocabulary-size', type=int, default=50000, metavar='V',
-                    help='maximum vocabulary size, only the top V occurring terms will be used')
-parser.add_argument('--discrete-deltas', dest='delta_encoder', action='store_const',
-                    const=encode_delta_discrete, default=encode_delta_continuous,
-                    help='rather than encoding deltas as tanh(log(delta)), '
-                         'discretize them into buckets: > 1 day, > 2 days, > 1 week, etc.'
-                         '(we don\'t have enough data for this be useful)')
+flags.DEFINE_integer('max_chrono_length', default=7, lower_bound=1,
+                     help='The maximum number of snapshots per chronology.')
+flags.DEFINE_integer('max_snapshot_size', default=200, lower_bound=1,
+                     help='The maximum number of observations to consider per snapshot.')
+flags.DEFINE_integer('max_vocab_size', default=50000, lower_bound=1,
+                     help='The maximum vocabulary size, only the top max_vocab_size most-frequent observations will be '
+                          'used to encode clinical snapshots. Any remaining observations will be ignored.')
+
+flags.DEFINE_boolean('use_discrete_deltas', default=False,
+                     help='Rather than encoding deltas as tanh(log(delta)), they will be discretized into buckets: > '
+                          '1 day, > 2 days, > 1 week, etc.')
 
 # CANTRIP: General parameters
-parser.add_argument('--dropout', type=float, default=0.7, help='dropout used for all dropout layers')
-parser.add_argument('--vocab-dropout', type=float, default=0.7,
-                    help='dropout used for vocabulary-level dropout (overrides --dropout)')
+flags.DEFINE_float('dropout', default=0.7, lower_bound=0.,
+                   help='Dropout used for all dropout layers (except vocabulary)')
+flags.DEFINE_float('vocab_dropout', default=0.7, lower_bound=0.,
+                   help='Dropout used for vocabulary-level dropout (supersedes --dropout)')
 
 # CANTRIP: Clinical Snapshot Encoder parameters
-parser.add_argument('--observation-embedding-size', type=int, default=200,
-                    help="dimensions of observation embedding vectors")
-parser.add_argument('--snapshot-embedding-size', type=int, default=200,
-                    help="dimensions of clinical snapshot encoding vectors")
-parser.add_argument('--snapshot-encoder', choices=['RNN', 'CNN', 'BAG', 'DAN', 'DENSE'],
-                    default='DAN', help='type of clinical snapshot encoder to use')
+flags.DEFINE_integer('observation_embedding_size', default=200, lower_bound=1,
+                     help='The dimensions of observation embedding vectors.')
+flags.DEFINE_integer('snapshot_embedding_size', default=200, lower_bound=1,
+                     help='The dimensions of clinical snapshot encoding vectors.')
+flags.DEFINE_enum('snapshot_encoder', default='DAN', enum_values=['RNN', 'CNN', 'SPARSE', 'DAN', 'DENSE'],
+                  help='The type of clinical snapshot encoder to use')
 
-doc_encoder_rnn = parser.add_argument_group(title='Snapshot Encoder: RNN Flags')
-doc_encoder_rnn.add_argument('--snapshot-rnn-num-hidden', type=int, nargs='+', default=[200],
-                             help='size of hidden layer(s) used for combining clinical obserations to produce the '
-                                  'clinical snapshot encoding; multiple arguments result in multiple hidden layers')
-doc_encoder_rnn.add_argument('--snapshot-rnn-cell-type', choices=['LSTM', 'LSTM-LN', 'GRU', 'GRU-LN', 'RAN', 'RAN-LN'],
-                             default='GRU',
-                             help='type of cell to use when encoding snapshots')
+# RNN
+flags.DEFINE_multi_integer('snapshot_rnn_num_hidden', default=[200], lower_bound=1,
+                           help='The size of hidden layer(s) used for combining clinical observations to produce the '
+                                'clinical snapshot encoding; multiple arguments result in multiple hidden layers')
+flags.DEFINE_enum('snapshot_rnn_cell_type', default='RAN', enum_values=['LSTM', 'GRU', 'RAN'],
+                  help='The type of RNN cell to use when encoding snapshots')
+flags.DEFINE_bool('snap_rnn_layer_norm', default=False,
+                  help='Enable layer normalization in the RNN used for snapshot encoding.')
 
-doc_encoder_cnn = parser.add_argument_group(title='Snapshot Encoder: CNN Flags')
-doc_encoder_cnn.add_argument('--snapshot-cnn-windows', type=int, nargs='?', default=[3, 4, 5],
-                             help='length of convolution window(s) for CNN-based snapshot encoder; '
-                                  'multiple arguments results in multiple convolution windows')
-doc_encoder_cnn.add_argument('--snapshot-cnn-kernels', type=int, default=1000, help='number of filters used in CNN')
+# CNN
+flags.DEFINE_multi_integer('snapshot_cnn_windows', default=[3, 4, 5], lower_bound=1,
+                           help='The length of convolution window(s) for CNN-based snapshot encoder; '
+                                'multiple arguments results in multiple convolution windows.')
+flags.DEFINE_integer('snapshot_cnn_kernels', default=1000, lower_bound=1,
+                     help='The number of filters used in CNN')
 
-
-doc_encoder_dan = parser.add_argument_group(title='Snapshot Encoder: DAN Flags')
-doc_encoder_cnn.add_argument('--snapshot-dan-num-hidden-avg', type=int, nargs='+', default=[200, 200],
-                             help='number of hidden units to use when refining the DAN average layer; '
-                                  'multiple arguments results in multiple dense layers')
-doc_encoder_cnn.add_argument('--snapshot-dan-num-hidden-obs', type=int, nargs='+', default=[200, 200],
-                             help='number of hidden units to use when refining clinical observation embeddings; '
-                                  'multiple arguments results in multiple dense layers')
+# DAN
+flags.DEFINE_multi_integer('snapshot_dan_num_hidden_avg', default=[200, 200], lower_bound=1,
+                           help='The number of hidden units to use when refining the DAN average layer; '
+                                'multiple arguments results in multiple dense layers.')
+flags.DEFINE_multi_integer('snapshot_dan_num_hidden_obs', default=[200, 200], lower_bound=1,
+                           help='The number of hidden units to use when refining clinical observation embeddings; '
+                                'multiple arguments results in multiple dense layers.')
 
 # CANTRIP: Clinical Picture Inference parameters
-parser.add_argument('--rnn-num-hidden', type=int, nargs='+', default=[100],
-                    help='size of hidden layer(s) used for inferring the clinical picture; '
-                         'multiple arguments result in multiple hidden layers')
-parser.add_argument('--rnn-cell-type', choices=CELL_TYPES, default='RAN',
-                    help='type of RNN cell to use for inferring the clinical picture')
+flags.DEFINE_multi_integer('rnn_num_hidden', default=[100], lower_bound=1,
+                           help='The size of hidden layer(s) used for inferring the clinical picture; '
+                                'multiple arguments result in multiple hidden layers.')
+flags.DEFINE_enum('rnn_cell_type', enum_values=['RAN', 'LRAN', 'GRU', 'LSTM'], default='RAN',
+                  help='The type of RNN cell to use for inferring the clinical picture.')
+flags.DEFINE_boolean('rnn_layer_norm', default=True,
+                     help='Whether to use layer normalization in RNN used for inferring the clinical picture.')
 
 # Experimental setting parameters
-parser.add_argument('--batch-size', type=int, default=40, help='batch size')
-parser.add_argument('--num-epochs', type=int, default=30, help='number of training epochs')
-parser.add_argument('--tdt-ratio', default='8:1:1', help='training:development:testing ratio')
-parser.add_argument('--early-term', default=False, action='store_true', help='stop when F1 on dev set decreases; '
-                                                                             'this is pretty much always a bad idea')
+flags.DEFINE_integer('batch_size', default=40, lower_bound=1, help='The batch size.')
+flags.DEFINE_integer('num_epochs', default=30, lower_bound=1, help='The number of training epochs.')
+flags.DEFINE_string('tdt_ratio', default='8:1:1', help='The training:development:testing ratio.')
+flags.DEFINE_boolean('early_term', default=False, help='Stop when F2 on dev set decreases; '
+                                                       'this is pretty much always a bad idea.')
 
 # TensorFlow-specific settings
-parser.add_argument('--summary-dir', default=os.path.join('data', 'working', 'summaries'))
-parser.add_argument('--checkpoint-dir', default=os.path.join('models', 'checkpoints'))
-parser.add_argument('--clear', default=False, action='store_true',
-                    help='remove previous summary/checkpoints before starting this run')
-parser.add_argument('--debug', default=None, help='hostname:port of TensorBoard debug server')
+flags.DEFINE_string('output_dir', default=None,
+                    help='The output directory where model checkpoints and summaries will be written.')
+flags.DEFINE_boolean('clear_prev', default=False,
+                     help='Whether to remove previous summary/checkpoints before starting this run.')
+flags.DEFINE_string('debug', default=None,
+                    help='The hostname:port of TensorBoard debug server; debugging will be enabled if this flag is '
+                         'specified.')
 
-parser.add_argument('--print-performance', default=False, action='store_true')
-parser.add_argument('--print-latex-results', default=False, action='store_true')
-parser.add_argument('--print-tabbed-results', default=False, action='store_true')
+flags.DEFINE_boolean('print_performance', default=False, help='Whether to print performance to the console.')
+flags.DEFINE_boolean('print_latex_results', default=False,
+                     help='Whether to print performance in a LaTeX-friendly table.')
+flags.DEFINE_boolean('print_tabbed_results', default=False,
+                     help='Whether to print performance in a tab-separated table.')
 
-parser.add_argument('--optimizer', choices=['cantrip', 'bert'], default='cantrip', help='type of optimizer to use')
+flags.DEFINE_enum('optimizer', enum_values=['CANTRIP', 'BERT'], default='CANTRIPq',
+                  help='The type of optimizer to use when training CANTRIP.')
 
-parser.add_argument('--init-lr', default=1e-4, type=float, help='initial learning rate')
+flags.DEFINE_float('learning_rate', default=1e-4, lower_bound=np.nextafter(np.float32(0), np.float32(1)),
+                   help='The initial learning rate.')
 
-
-parser.add_argument('--do_train')
-# TODO: break the file into separate training/testing/inference phases
-parser.add_argument('--mode', choices=['TRAIN'], default='TRAIN', help=argparse.SUPPRESS)
+flags.DEFINE_boolean('do_train', default=False, help='Whether to train on training data.')
+flags.DEFINE_boolean('do_train_eval', default=False,
+                     help='Whether to train on training data while repeatedly evaluating on development data.')
+flags.DEFINE_boolean('do_eval', default=False, help='Whether to evaluate on development data.')
+flags.DEFINE_boolean('do_predict', default=False, help='Whether to run predictions on test data.')
 
 
 def make_train_devel_test_split(data: Iterable, ratio: str) -> (Iterable, Iterable, Iterable):
@@ -135,7 +151,7 @@ def make_train_devel_test_split(data: Iterable, ratio: str) -> (Iterable, Iterab
     return _train, _devel, _test
 
 
-def run_model(model: CANTRIPModel, raw_cohort: Cohort, args):
+def run_model(model, raw_cohort, delta_encoder):
     """
     Run the given model using the given cohort and experimental settings contained in args.
 
@@ -145,8 +161,11 @@ def run_model(model: CANTRIPModel, raw_cohort: Cohort, args):
     (3) trains CANTRIP and saves checkpoint/summaries for TensorBoard
     (4) evaluates CANTRIP on the development and testing set
     :param model: an instantiated CANTRIP model
+    :type model: modeling.CANTRIPModel
     :param raw_cohort: the cohort to use for this experimental run
-    :param args: command-line arguments specifying model/experiment parameters
+    :type raw_cohort: preprocess.Cohort
+    :param delta_encoder: encoder used to represented elapsed time deltas
+    :type delta_encoder: preprocess.DeltaEncoder
     :return: nothing
     """
 
@@ -154,36 +173,41 @@ def run_model(model: CANTRIPModel, raw_cohort: Cohort, args):
     cohort = raw_cohort.balance_chronologies()
 
     # Split into training:development:testing
-    train, devel, test = make_train_devel_test_split(cohort.patients(), args.tdt_ratio)
+    train, devel, test = make_train_devel_test_split(cohort.patients(), FLAGS.tdt_ratio)
 
     # Save summaries and checkpoints into the directories passed to the script
-    model_summaries_dir = os.path.join(args.summary_dir, args.optimizer, args.rnn_cell_type, args.snapshot_encoder)
-    model_checkpoint_dir = os.path.join(args.checkpoint_dir, args.optimizer, args.rnn_cell_type, args.snapshot_encoder)
+    model_summaries_dir = os.path.join(FLAGS.output_dir, 'summaries', FLAGS.optimizer, FLAGS.rnn_cell_type,
+                                       FLAGS.snapshot_encoder)
+    model_checkpoint_dir = os.path.join(FLAGS.output_dir, 'checkpoints', FLAGS.optimizer, FLAGS.rnn_cell_type,
+                                        FLAGS.snapshot_encoder)
 
     # Clear any previous summaries/checkpoints if asked
-    if args.clear:
-        delete_dir_quiet(model_summaries_dir)
-        delete_dir_quiet(model_checkpoint_dir)
+    if FLAGS.clear_prev:
+        nio.delete_dir_quiet(model_summaries_dir)
+        nio.delete_dir_quiet(model_checkpoint_dir)
         print('Deleted previous model summaries/checkpoints')
 
     # Make output directories so we don't blow up when saving
-    make_dirs_quiet(model_checkpoint_dir)
+    nio.make_dirs_quiet(model_checkpoint_dir)
 
     # Instantiate CANTRIP optimizer and summarizer classes
-    if args.optimizer == 'cantrip':
-        optimizer = CANTRIPOptimizer(model)
-    elif args.optimizer == 'bert':
-        epoch_steps = len(cohort[train].make_epoch_batches(**vars(args)))
-        optimizer = BERTOptimizer(model,
-                                  num_train_steps=epoch_steps * args.num_epochs,
-                                  num_warmup_steps=epoch_steps * 3,
-                                  init_lr=args.init_lr)
-        print('Created BERT-like optimizer with initial learning rate of %f' % args.init_lr)
+    if FLAGS.optimizer == 'cantrip':
+        optimizer = optimization.CANTRIPOptimizer(model, learning_rate=FLAGS.learning_rate, sparse=True)
+    elif FLAGS.optimizer == 'bert':
+        epoch_steps = len(cohort[train].make_epoch_batches(batch_size=FLAGS.batch_size,
+                                                           max_snapshot_size=FLAGS.max_snapshot_size,
+                                                           max_chrono_length=FLAGS.max_chrono_length,
+                                                           delta_encoder=delta_encoder))
+        optimizer = optimization.BERTOptimizer(model,
+                                               num_train_steps=epoch_steps * FLAGS.num_epochs,
+                                               num_warmup_steps=epoch_steps * 3,
+                                               init_lr=FLAGS.learning_rate)
+        print('Created BERT-like optimizer with initial learning rate of %f' % FLAGS.learning_rate)
     else:
-        parser.error('Invalid optimizer specified: %s' % args.optimizer)
+        raise NotImplementedError('No optimizer available for %s' % FLAGS.optimizer)
 
     # noinspection PyUnboundLocalVariable
-    summarizer = CANTRIPSummarizer(model, optimizer)
+    summarizer = summarization.CANTRIPSummarizer(model, optimizer)
 
     # Now that everything has been defined in TensorFlow's computation graph, initialize our model saver
     saver = tf.train.Saver(tf.global_variables())
@@ -196,8 +220,8 @@ def run_model(model: CANTRIPModel, raw_cohort: Cohort, args):
         # If we specified a TensorBoard debug server, connect to it
         # (this is actually pretty sweet but you have to manually step through your model's flow so 99% of the time
         # you shouldn't need it)
-        if args.debug is not None:
-            sess = tf_debug.TensorBoardDebugWrapperSession(sess, args.debug)
+        if FLAGS.debug is not None:
+            sess = tf_debug.TensorBoardDebugWrapperSession(sess, FLAGS.debug)
 
         # Create our summary writer (used by TensorBoard)
         summary_writer = tf.summary.FileWriter(model_summaries_dir, sess.graph)
@@ -215,10 +239,10 @@ def run_model(model: CANTRIPModel, raw_cohort: Cohort, args):
         sess.run(tf.local_variables_initializer())
 
         # Create a progress logger to monitor training (this is a wrapped version of range()
-        with trange(args.num_epochs, desc='Training') as train_log:
+        with trange(FLAGS.num_epochs, desc='Training') as train_log:
             # Save the training, development, and testing metrics for our best model (as measured by devel F1)
             # I'm lazy so I initialize best_devel_metrics with a zero F1 so I can compare the first iteration to it
-            best_train_metrics, best_devel_metrics, best_test_metrics = {}, {'F1': 0}, {}
+            best_train_metrics, best_devel_metrics, best_test_metrics = {}, {'F2': 0}, {}
             # Iterate over training epochs
             for i in train_log:
                 # Get global step and reset training metrics
@@ -226,9 +250,12 @@ def run_model(model: CANTRIPModel, raw_cohort: Cohort, args):
                 # Log our progress on the current epoch using tqdm cohort.make_epoch_batches shuffles the order of
                 # chronologies and prepares them  into mini-batches with zero-padding if needed
                 total_loss = 0.
-                batches = cohort[train].make_epoch_batches(**vars(args))
+                batches = cohort[train].make_epoch_batches(batch_size=FLAGS.batch_size,
+                                                           max_snapshot_size=FLAGS.max_snapshot_size,
+                                                           max_chrono_length=FLAGS.max_chrono_length,
+                                                           delta_encoder=delta_encoder)
                 num_batches = len(batches)
-                with tqdm(batches, desc = 'Epoch %d' % (i + 1)) as batch_log:
+                with tqdm(batches, desc='Epoch %d' % (i + 1)) as batch_log:
                     # Iterate over each batch
                     for j, batch in enumerate(batch_log):
                         # We train the model by evaluating the optimizer's training op. At the same time we update the
@@ -259,7 +286,10 @@ def run_model(model: CANTRIPModel, raw_cohort: Cohort, args):
                 # Evaluate development performance
                 sess.run(summarizer.devel.reset_op)
                 # Update local variables used to compute development metrics as we process each batch
-                for devel_batch in first_cohort[devel].make_epoch_batches(**vars(args)):
+                for devel_batch in first_cohort[devel].make_epoch_batches(batch_size=FLAGS.batch_size,
+                                                                          max_snapshot_size=FLAGS.max_snapshot_size,
+                                                                          max_chrono_length=FLAGS.max_chrono_length,
+                                                                          delta_encoder=delta_encoder):
                     sess.run([summarizer.devel.metric_ops], devel_batch.feed(model, training=False))
                 # Compute the development metrics
                 devel_metrics, devel_summary = sess.run([summarizer.devel.metrics, summarizer.devel.summary])
@@ -277,47 +307,49 @@ def run_model(model: CANTRIPModel, raw_cohort: Cohort, args):
 
                 # Evaluate testing performance exactly as described above for development
                 sess.run(summarizer.test.reset_op)
-                for batch in first_cohort[test].make_epoch_batches(**vars(args)):
+                for batch in first_cohort[test].make_epoch_batches(batch_size=FLAGS.batch_size,
+                                                                   max_snapshot_size=FLAGS.max_snapshot_size,
+                                                                   max_chrono_length=FLAGS.max_chrono_length,
+                                                                   delta_encoder=delta_encoder):
                     sess.run([summarizer.test.metrics, summarizer.test.metric_ops], batch.feed(model, training=False))
                 test_metrics, test_summary = sess.run([summarizer.test.metrics, summarizer.test.summary])
                 summary_writer.add_summary(test_summary, global_step=global_step)
 
                 # If this run did better on the dev set, save it as the new best model
-                if devel_metrics['F1'] > best_devel_metrics['F1']:
+                if devel_metrics['F2'] > best_devel_metrics['F2']:
                     best_devel_metrics = devel_metrics
                     best_train_metrics = train_metrics
                     best_test_metrics = test_metrics
                     # Save the model
                     saver.save(sess, model_checkpoint_dir, global_step=global_step)
-                elif args.early_term:
+                elif FLAGS.early_term:
                     tqdm.write('Early termination!')
                     break
 
         print('Training complete!')
 
-        if args.print_performance:
+        if FLAGS.print_performance:
             print('Train: %s' % str(best_train_metrics))
             print('Devel: %s' % str(best_devel_metrics))
             print('Test: %s' % str(best_test_metrics))
 
-        if args.print_tabbed_results:
+        if FLAGS.print_tabbed_results:
             print_table_results(best_train_metrics, best_devel_metrics, best_test_metrics, 'simple')
 
-        if args.print_latex_results:
+        if FLAGS.print_latex_results:
             print_table_results(best_train_metrics, best_devel_metrics, best_test_metrics, 'latex_booktabs')
 
 
-# Facilitates lazy loading of tabulate module
-tabulate = None
-
-
-def print_table_results(train: dict, devel: dict, test: dict, tablefmt):
+def print_table_results(train, devel, test, tablefmt):
     """Prints results in a table to the console
-
     :param train: training metrics
+    :type train: dict,
     :param devel: development metrics
+    :type devel: dict,
     :param test: testing metrics
+    :type test: dict,
     :param tablefmt: table format for use with tabular
+    :type tablefmt: str,
     :return: nothing
     """
 
@@ -357,50 +389,60 @@ def print_table_results(train: dict, devel: dict, test: dict, tablefmt):
 def main(argv):
     """
     Main method for the script. Parses arguments and calls run_model.
-    :param argv: commandline arguments
+    :param argv: commandline arguments, unused.
     """
-    args = parser.parse_args(argv[1:])
+    del argv
 
     # Load cohort
-    cohort = Cohort.from_disk(args.chronology_path, args.vocabulary_path, args.vocabulary_size)
+    cohort = preprocess.Cohort.from_disk(FLAGS.data_dir, FLAGS.vocab_file, FLAGS.max_vocab_size)
 
     # Compute vocabulary size (it may be smaller than args.vocabulary_size)
     vocabulary_size = len(cohort.vocabulary)
 
     # The embedding size is the same as the word embedding size unless using the BAG encoder
-    observation_embedding_size = args.observation_embedding_size
+    observation_embedding_size = FLAGS.observation_embedding_size
 
     # Parse snapshot-encoder-specific arguments
-    if args.snapshot_encoder == 'RNN':
-        snapshot_encoder = rnn_encoder(args.snapshot_rnn_num_hidden)
-    elif args.snapshot_encoder == 'CNN':
-        snapshot_encoder = cnn_encoder(args.snapshot_cnn_windows, args.snapshot_cnn_num_kernels, args.dropout)
-    elif args.snapshot_encoder == 'BAG':
-        snapshot_encoder = bag_encoder
+    if FLAGS.snapshot_encoder == 'RNN':
+        snapshot_encoder = encoding.rnn_encoder(FLAGS.snapshot_rnn_num_hidden)
+    elif FLAGS.snapshot_encoder == 'CNN':
+        snapshot_encoder = encoding.cnn_encoder(FLAGS.snapshot_cnn_windows, FLAGS.snapshot_cnn_num_kernels,
+                                                FLAGS.dropout)
+    elif FLAGS.snapshot_encoder == 'BAG':
+        snapshot_encoder = encoding.bag_encoder
         observation_embedding_size = vocabulary_size
-    elif args.snapshot_encoder == 'DENSE':
-        snapshot_encoder = dense_encoder
-    elif args.snapshot_encoder == 'DAN':
-        snapshot_encoder = dan_encoder(args.snapshot_dan_num_hidden_obs, args.snapshot_dan_num_hidden_avg)
+    elif FLAGS.snapshot_encoder == 'DENSE':
+        snapshot_encoder = encoding.dense_encoder
+    elif FLAGS.snapshot_encoder == 'DAN':
+        snapshot_encoder = encoding.dan_encoder(FLAGS.snapshot_dan_num_hidden_obs, FLAGS.snapshot_dan_num_hidden_avg)
     else:
-        raise ValueError('Given illegal snapshot encoder %s' % args.doc_encoder)
+        raise ValueError('Given illegal snapshot encoder %s' % FLAGS.doc_encoder)
 
-    model = CANTRIPModel(max_seq_len=args.max_chron_len,
-                         max_snapshot_size=args.max_snapshot_size,
-                         vocabulary_size=vocabulary_size,
-                         observation_embedding_size=observation_embedding_size,
-                         num_hidden=args.rnn_num_hidden,
-                         cell_type=args.rnn_cell_type,
-                         batch_size=args.batch_size,
-                         snapshot_encoder=snapshot_encoder,
-                         dropout=args.dropout,
-                         num_classes=2,
-                         delta_encoding_size=args.delta_encoder.size)
+    cell_type = FLAGS.rnn_cell_type
+    if FLAGS.rnn_layer_norm:
+        cell_type += '-LN'
 
-    if args.mode == 'TRAIN':
-        run_model(model, cohort, args)
+    delta_encoder = preprocess.TanhLogDeltaEncoder() if FLAGS.use_discrete_deltas else preprocess.DiscreteDeltaEncoder()
+
+    model = modeling.CANTRIPModel(max_seq_len=FLAGS.max_chrono_length,
+                                  max_snapshot_size=FLAGS.max_snapshot_size,
+                                  vocabulary_size=vocabulary_size,
+                                  observation_embedding_size=observation_embedding_size,
+                                  num_hidden=FLAGS.rnn_num_hidden,
+                                  cell_type=cell_type,
+                                  batch_size=FLAGS.batch_size,
+                                  snapshot_encoder=snapshot_encoder,
+                                  dropout=FLAGS.dropout,
+                                  num_classes=2,
+                                  delta_encoding_size=delta_encoder.size)
+
+    if FLAGS.do_train:
+        run_model(model, cohort, delta_encoder)
 
 
 if __name__ == '__main__':
+    flags.mark_flag_as_required('data_dir')
+    flags.mark_flag_as_required('vocab_file')
+    flags.mark_flag_as_required('output_dir')
     tf.logging.set_verbosity(tf.logging.DEBUG)
-    sys.exit(main(sys.argv))
+    tf.app.run()

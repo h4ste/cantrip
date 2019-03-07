@@ -2,11 +2,11 @@ import argparse
 import csv
 import os
 
+import preprocess
+
 parser = argparse.ArgumentParser(description='convert TSV to xml output')
 parser.add_argument('tsv_path', metavar='tsv-path', help='path to cohort chronologies')
 parser.add_argument('xml_output_path', metavar='xml_output_path', help='path to cohort vocabulary')
-
-
 
 
 def tsv_to_xml(tsv_path, output_dir):
@@ -20,7 +20,8 @@ def tsv_to_xml(tsv_path, output_dir):
 
         for i, (subject_id, visit_id, hadm_id, date, category, description, note_text) in enumerate(tsv):
             with open(os.path.join(output_dir, 'report-%d.xml' % (i + 1)), 'wb') as xml_file:
-                write_record_to_xml(subject_id, visit_id, hadm_id, date, category, description, note_text, xml_file)
+                preprocess.write_note_as_xml(subject_id, visit_id, hadm_id, date, category, description, note_text,
+                                             xml_file)
 
 
 if __name__ == '__main__':

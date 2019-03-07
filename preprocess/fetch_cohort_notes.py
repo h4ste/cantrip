@@ -2,6 +2,7 @@ import argparse
 import importlib
 import os
 import sys
+import nio
 
 try:
     from tqdm import trange, tqdm
@@ -10,8 +11,6 @@ except ImportError:
     from mock_tqdm import trange, tqdm
 
 from getpass import getuser, getpass
-
-from io import make_dirs_quiet
 
 _cohorts = {
     'pneumonia': """SELECT subject_id, hadm_id
@@ -185,7 +184,7 @@ def fetch_and_write_mimic_notes(output_dir, cohort, db_api2_impl, server, databa
 
         # Creating parent directories if needed
         visit_dir = os.path.join(output_dir, str(subject_id), str(visit_id), str(hadm_id))
-        make_dirs_quiet(visit_dir)
+        nio.make_dirs_quiet(visit_dir)
 
         # Write the XML
         xml_file_name = '{date}.{note_idx}.report.xml'.format(

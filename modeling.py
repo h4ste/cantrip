@@ -1,13 +1,11 @@
 from typing import Union, List, Callable
 
 import tensorflow as tf
-from tensorflow.contrib.rnn import LayerNormBasicLSTMCell
-from tensorflow.nn.rnn_cell import BasicLSTMCell, GRUCell
 
-from layers import rnn_layer
-from src.models.rnn_cell import SimpleRANCell, RANCell, LayerNormGRUCell, InterpretableSimpleRANCell
+import rnn_cell
+import layers
 
-CELL_TYPES = ['SRAN', 'IRAN', 'RAN', 'RAN-LN', 'LSTM', 'LSTM-LN', 'GRU', 'GRU-LN']
+CELL_TYPES = ['LRAN', 'RAN', 'LSTM', 'GRU']
 
 
 class CANTRIPModel(object):
@@ -51,6 +49,7 @@ class CANTRIPModel(object):
             prediction module
         y: a tf.Tensor with shape [batch_size] with the predicting disease-risk for each chronology in the mini-batch
     """
+
     def __init__(self,
                  max_seq_len: int,
                  max_snapshot_size: int,
@@ -64,7 +63,7 @@ class CANTRIPModel(object):
                  dropout: float = 0.,
                  vocab_dropout: float = None,
                  num_classes: int = 2):
-        """Inits a new CANTRIP model with the given model parameters
+        """Initializes a new CANTRIP model with the given model parameters
         :param max_seq_len: the maximum number of clinical snapshots used in any mini-batch
         :param max_snapshot_size: the maximum number of observations documented in any clinical snapshot
         :param vocabulary_size:  the number of unique observations
@@ -138,17 +137,15 @@ class CANTRIPModel(object):
 
             _cell_types = {
                 # Original RAN from https://arxiv.org/abs/1705.07393
-                'RAN': RANCell,
-                'RAN-LN': lambda num_cells: RANCell(num_cells, normalize=True),
+                'RAN': rnn_cell.RANCell,
+                'RAN-LN': lambda num_cells: rnn_cell.RANCell(num_cells, normalize=True),
                 # Super secret simplified RAN variant from Eq. group (2) in https://arxiv.org/abs/1705.07393
-                'SRAN': lambda num_cells: SimpleRANCell(self.x.shape[-1]),
-                'SRAN-LN': lambda num_cells: SimpleRANCell(self.x.shape[-1], normalize=True),
-                'IRAN': lambda num_cells: InterpretableSimpleRANCell(self.x.shape[-1]),
-                'IRAN-LN': lambda num_cells: InterpretableSimpleRANCell(self.x.shape[-1], normalize=True),
-                'LSTM': BasicLSTMCell,
-                'LSTM-LN': LayerNormBasicLSTMCell,
-                'GRU': GRUCell,
-                'GRU-LN': LayerNormGRUCell
+                'LRAN': lambda num_cells: rnn_cell.SimpleRANCell(self.x.shape[-1]),
+                'LRAN-LN': lambda num_cells: rnn_cell.SimpleRANCell(self.x.shape[-1], normalize=True),
+                'LSTM': tf.nn.rnn_cell.BasicLSTMCell,
+                'LSTM-LN': tf.contrib.rnn.LayerNormBasicLSTMCell,
+                'GRU': tf.nn.rnn_cell.GRUCell,
+                'GRU-LN': rnn_cell.LayerNormGRUCell
             }
 
             if cell_type not in _cell_types:
@@ -158,13 +155,13 @@ class CANTRIPModel(object):
 
             # Compute weights AND final RNN output if looking at RANv2 variants
             if cell_type.startswith('IRAN'):
-                self.seq_final_output, self.rnn_weights = rnn_layer(self.cell_fn, self.num_hidden,
-                                                                    self.x,
-                                                                    self.seq_lengths,
-                                                                    return_interpretable_weights=True)
+                self.seq_final_output, self.rnn_weights = layers.rnn_layer(self.cell_fn, self.num_hidden,
+                                                                           self.x,
+                                                                           self.seq_lengths,
+                                                                           return_interpretable_weights=True)
             else:
-                self.seq_final_output = rnn_layer(self.cell_fn, self.num_hidden, self.x, self.seq_lengths,
-                                                  return_interpretable_weights=False)
+                self.seq_final_output = layers.rnn_layer(self.cell_fn, self.num_hidden, self.x, self.seq_lengths,
+                                                         return_interpretable_weights=False)
 
             # Even more fun dropout
             if self.dropout > 0:
@@ -179,117 +176,3 @@ class CANTRIPModel(object):
         """Categorical arg-max prediction for disease-risk"""
         # Class labels (used mainly for metrics)
         self.y = tf.argmax(self.logits, axis=-1, output_type=tf.int32, name='class_predictions')
-
-
-class CANTRIPSummarizer(object):
-
-    def __init__(self, model: CANTRIPModel, optimizer):
-        self.model = model
-        self.optimizer = optimizer
-
-        # Batch-level confusion matrix
-        self.tp = tf.count_nonzero(model.y * model.labels, dtype=tf.int32)
-        self.tn = tf.count_nonzero((model.y - 1) * (model.labels - 1), dtype=tf.int32)
-        self.fp = tf.count_nonzero(model.y * (model.labels - 1), dtype=tf.int32)
-        self.fn = tf.count_nonzero((model.y - 1) * model.labels, dtype=tf.int32)
-
-        # Batch-level binary classification metrics
-        self.precision = self.tp / (self.tp + self.fp)
-        self.recall = self.tp / (self.tp + self.fn)
-        self.accuracy = (self.tp + self.tn) / model.batch_size
-        self.specificity = self.tn / (self.tn + self.fp)
-        self.f1 = 2 * self.precision * self.recall / (self.precision + self.recall)
-        self.f2 = 5 * self.precision * self.recall / (4 * self.precision + self.recall)
-
-        # Dict of all metrics to make fetching more convenient
-        self.batch_metrics = {
-            'TP': self.tp,
-            'TN': self.tn,
-            'FP': self.fp,
-            'FN': self.fn,
-            'Precision': self.precision,
-            'Recall': self.recall,
-            'Accuracy': self.accuracy,
-            'Specificity': self.specificity,
-            'F1': self.f1,
-            'F2': self.f2,
-            'Loss': optimizer.loss
-        }
-
-        # Group all batch-level metrics in the same pane in TensorBoard using a name scope
-        with tf.name_scope('Batch'):
-            self.batch_summary = tf.summary.merge([
-                tf.summary.scalar('Accuracy', self.accuracy),
-                tf.summary.scalar('Precision', self.precision),
-                tf.summary.scalar('Recall', self.recall),
-                tf.summary.scalar('F1', self.f1),
-                tf.summary.scalar('F2', self.f2),
-                tf.summary.scalar('Specificity', self.specificity),
-                tf.summary.scalar('Loss', optimizer.loss)
-            ])
-
-        # Specific training/development/testing summarizers
-        self.train = _CANTRIPModeSummarizer('train', model)
-        self.devel = _CANTRIPModeSummarizer('devel', model)
-        self.test = _CANTRIPModeSummarizer('test', model)
-
-
-class _CANTRIPModeSummarizer(object):
-
-    def __init__(self, mode: str, model: CANTRIPModel):
-        self.mode = mode
-        with tf.name_scope(mode) as scope:
-            # Streaming, epoch-level metrics
-            acc, acc_op = tf.metrics.accuracy(model.labels, model.y)
-            auroc, auroc_op = tf.metrics.auc(model.labels, model.y, summation_method='careful_interpolation')
-            auprc, auprc_op = tf.metrics.auc(model.labels, model.y, curve='PR',
-                                             summation_method='careful_interpolation')
-            p, p_op = tf.metrics.precision(model.labels, model.y)
-            r, r_op = tf.metrics.recall(model.labels, model.y)
-            f1 = 2 * p * r / (p + r)
-            f2 = 5 * p * r / (4 * p + r)
-
-            # Streaming, epoch-level confusion matrix information
-            with tf.name_scope('confusion_matrix'):
-                tp, tp_op = tf.metrics.true_positives(model.labels, model.y)
-                tn, tn_op = tf.metrics.true_negatives(model.labels, model.y)
-                fp, fp_op = tf.metrics.false_positives(model.labels, model.y)
-                fn, fn_op = tf.metrics.false_negatives(model.labels, model.y)
-                # Group these so they all show up together in TensorBoard
-                confusion_matrix = tf.summary.merge([
-                    tf.summary.scalar('TP', tp),
-                    tf.summary.scalar('TN', tn),
-                    tf.summary.scalar('FP', fp),
-                    tf.summary.scalar('FN', fn),
-                ])
-
-            # Summary containing all epoch-level metrics computed for the current mode
-            self.summary = tf.summary.merge([
-                tf.summary.scalar('Accuracy', acc),
-                tf.summary.scalar('AUROC', auroc),
-                tf.summary.scalar('AUPRC', auprc),
-                tf.summary.scalar('Precision', p),
-                tf.summary.scalar('Recall', r),
-                tf.summary.scalar('F1', f1),
-                tf.summary.scalar('F2', f2),
-                confusion_matrix
-            ])
-
-            # Dictionary of epoch-level metrics for each fetching
-            self.metrics = {
-                'Accuracy': acc,
-                'AUROC': auroc,
-                'AUPRC': auprc,
-                'Precision': p,
-                'Recall': r,
-                'F1': f1,
-                'F2': f2,
-            }
-
-            # TensorFlow operations that need to be run to update the epoch-level metrics on each batch
-            self.metric_ops = [acc_op, auroc_op, auprc_op, p_op, r_op,
-                               [tp_op, tn_op, fp_op, fn_op]]
-
-            # Operation to reset metrics after each epoch
-            metric_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope=scope)
-            self.reset_op = tf.variables_initializer(var_list=metric_vars)

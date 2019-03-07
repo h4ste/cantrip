@@ -7,13 +7,12 @@ clinical snapshot encoding ops to the graph returning the final clinical snapsho
 """
 
 import tensorflow as tf
-from tensorflow.nn.rnn_cell import GRUCell
 
-from src.models import CANTRIPModel
-from layers import rnn_layer, embedding_layer, create_embeddings
+import layers
+import rnn_cell
 
 
-def rnn_encoder(num_hidden, cell_fn=GRUCell):
+def rnn_encoder(num_hidden, cell_fn=rnn_cell.RANCell):
     """
     Creates an RNN encoder with the given number of hidden layers. If
     :param num_hidden: number of hidden (memory) units use; num_hidden is iterable, a multi-layer
@@ -22,10 +21,15 @@ def rnn_encoder(num_hidden, cell_fn=GRUCell):
     :return: rnn_encoder function
     """
 
-    def _rnn_encoder(model: CANTRIPModel):
+    def _rnn_encoder(model):
+        """
+
+        :type model: modeling.BERTModel
+        """
         with tf.variable_scope('rnn_encoder'):
             # Embed clinical observations
-            embedded_observations = embedding_layer(model.observations, model.vocabulary_size, model.embedding_size)
+            embedded_observations = layers.embedding_layer(model.observations, model.vocabulary_size,
+                                                           model.embedding_size)
 
             # Reshape to (batch * seq_len) x doc_len x embedding
             flattened_embedded_obs = tf.reshape(embedded_observations,
@@ -37,10 +41,11 @@ def rnn_encoder(num_hidden, cell_fn=GRUCell):
                                                   name='flat_snapshot_sizes')
 
             # Apply RNN to all documents in all batches
-            flattened_snapshot_encodings = rnn_layer(cell_fn=cell_fn,
-                                                     num_hidden=num_hidden,
-                                                     inputs=flattened_embedded_obs,
-                                                     lengths=flattened_snapshot_sizes)
+            flattened_snapshot_encodings = layers.rnn_layer(cell_fn=cell_fn,
+                                                            num_hidden=num_hidden,
+                                                            inputs=flattened_embedded_obs,
+                                                            lengths=flattened_snapshot_sizes,
+                                                            return_interpretable_weights=False)
 
             # Reshape back to (batch x seq_len x encoding_size)
             return tf.reshape(flattened_snapshot_encodings,
@@ -50,7 +55,7 @@ def rnn_encoder(num_hidden, cell_fn=GRUCell):
     return _rnn_encoder
 
 
-def cnn_encoder(windows=None, kernels=1000):
+def cnn_encoder(windows=None, kernels=1000, dropout=0.):
     """
     Creates a CNN encoder with the given number of windows, kernels, and dropout
     :param windows: number of consecutive observations to consider; defaults to [3, 4, 5]
@@ -61,10 +66,15 @@ def cnn_encoder(windows=None, kernels=1000):
     if windows is None:
         windows = [3, 4, 5]
 
-    def _cnn_encoder(model: CANTRIPModel):
+    def _cnn_encoder(model):
+        """
+
+        :type model: BERTModel
+        """
         with tf.variable_scope('cnn_encoder'):
             # Embed observations
-            embedded_observations = embedding_layer(model.observations, model.vocabulary_size, model.embedding_size)
+            embedded_observations = layers.embedding_layer(model.observations, model.vocabulary_size,
+                                                           model.embedding_size)
 
             # Reshape to (batch * seq_len) x snapshot_size x embedding
             flattened_embedded_obs = tf.reshape(embedded_observations,
@@ -75,7 +85,7 @@ def cnn_encoder(windows=None, kernels=1000):
             # Apply parallel convolutional and pooling layers
             outputs = []
             for n in windows:
-                if model.dropout > 0:
+                if dropout > 0:
                     flattened_embedded_obs = tf.layers.dropout(flattened_embedded_obs,
                                                                rate=model.dropout, training=model.training)
                 conv_layer = tf.layers.conv1d(flattened_embedded_obs, kernels,
@@ -89,7 +99,7 @@ def cnn_encoder(windows=None, kernels=1000):
             # Concatenate pooled outputs
             output = tf.concat(outputs, axis=-1)
 
-            # Embed concat output with leaky relu
+            # Embed concat output with leaky ReLU
             embeddings = tf.layers.dense(output, model.embedding_size, activation=tf.nn.relu)
 
             # Reshape back to [batch_size x max_seq_len x encoding_size]
@@ -98,11 +108,12 @@ def cnn_encoder(windows=None, kernels=1000):
     return _cnn_encoder
 
 
-def get_bag_vectors(model: CANTRIPModel):
+def get_bag_vectors(model):
     """
     Represents snapshots as a bag of clinical observations. Specifically, returns a V-length
     binary vector such that the v-th index is 1 iff the v-th observation occurs in the given snapshot
     :param model: CANTRIP model
+    :type model: modeling.CANTRIPModel
     :return: clinical snapshot encoding
     """
     # 1. Evaluate which entries in model.observations are non-zero
@@ -132,11 +143,12 @@ def get_bag_vectors(model: CANTRIPModel):
     return tf.sparse_reorder(st)
 
 
-def dense_encoder(model: CANTRIPModel):
+def dense_encoder(model):
     """
     Represents documents as an embedded bag of clinical observations. Specifically, returns an embedded of the V-length
     binary vector encoding all clinical observations included in a snapshot
     :param model: CANTRIP model
+    :type model: modeling.CANTRIPModel
     :return: clinical snapshot encoding
     """
     with tf.variable_scope('dense_encoder'):
@@ -146,7 +158,7 @@ def dense_encoder(model: CANTRIPModel):
             bags = get_bag_vectors(model)
 
             # Embed bag-of-observation vectors
-            embedded_observations = create_embeddings(model.vocabulary_size, model.embedding_size, model.dropout)
+            embedded_observations = layers.create_embeddings(model.vocabulary_size, model.embedding_size, model.dropout)
 
             # Reshape them so we use the same projection weights for every bag
             flat_emb_bags = tf.sparse_reshape(bags, [model.batch_size * model.max_seq_len,
@@ -168,11 +180,12 @@ def dense_encoder(model: CANTRIPModel):
                           name='doc_embeddings')
 
 
-def bag_encoder(model: CANTRIPModel):
+def bag_encoder(model):
     """
     Represents snapshots as a bag of clinical observations. Specifically, returns a V-length
     binary vector such that the v-th index is 1 iff the v-th observation occurs in the given snapshot
     :param model: CANTRIP model
+    :type model: modeling.CANTRIPModel
     :return: clinical snapshot encoding
     """
     with tf.variable_scope('bow_encoder'):
@@ -191,9 +204,16 @@ def dan_encoder(obs_hidden_units, avg_hidden_units):
     :return: clinical snapshot encoding
     """
 
-    def _dan_encoder(model: CANTRIPModel):
+    def _dan_encoder(model):
+        """
+
+        :param model:
+        :type model: modeling.CANTRIPModel
+        :return:
+        """
         with tf.variable_scope('dan_encoder'):
-            embedded_observations = embedding_layer(model.observations, model.vocabulary_size, model.embedding_size)
+            embedded_observations = layers.embedding_layer(model.observations, model.vocabulary_size,
+                                                           model.embedding_size)
 
             # Reshape to (batch * seq_len * doc_len) x embedding
             flattened_embedded_observations = tf.reshape(
