@@ -169,17 +169,36 @@ def run_model(model, raw_cohort, delta_encoder):
     :return: nothing
     """
 
+    import scipy
+
+    snapshot_sizes = []
+    for chronology in raw_cohort.chronologies():
+        for snapshot in chronology.snapshots:
+            snapshot_sizes.append(len(snapshot))
+    print('Statistics on snapshot sizes:', scipy.stats.describe(snapshot_sizes))
+
+
     # Balance the cohort to have an even number of positive/negative chronologies for each patient
     cohort = raw_cohort.balance_chronologies()
+
+
 
     # Split into training:development:testing
     train, devel, test = make_train_devel_test_split(cohort.patients(), FLAGS.tdt_ratio)
 
     # Save summaries and checkpoints into the directories passed to the script
-    model_summaries_dir = os.path.join(FLAGS.output_dir, 'summaries', FLAGS.optimizer, FLAGS.rnn_cell_type,
-                                       FLAGS.snapshot_encoder)
-    model_checkpoint_dir = os.path.join(FLAGS.output_dir, 'checkpoints', FLAGS.optimizer, FLAGS.rnn_cell_type,
-                                        FLAGS.snapshot_encoder)
+    model_file = 'ln=%d_delta=%s_d=%.2f_vd=%.2f_lr=%g_bs=%d' % (
+        1 if FLAGS.rnn_layer_norm else 0,
+        'disc' if FLAGS.use_discrete_deltas else 'tanh',
+        FLAGS.dropout,
+        FLAGS.vocab_dropout,
+        FLAGS.learning_rate,
+        FLAGS.batch_size,
+    )
+    model_summaries_dir = os.path.join(FLAGS.output_dir, FLAGS.optimizer, FLAGS.rnn_cell_type,
+                                       FLAGS.snapshot_encoder, model_file)
+    model_checkpoint_dir = os.path.join(FLAGS.output_dir, FLAGS.optimizer, FLAGS.rnn_cell_type,
+                                        FLAGS.snapshot_encoder, model_file)
 
     # Clear any previous summaries/checkpoints if asked
     if FLAGS.clear_prev:

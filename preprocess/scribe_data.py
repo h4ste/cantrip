@@ -311,9 +311,12 @@ class Chronology(object):
         Note: no defensive copies are made!
 
         :param deltas: list/array containing elapsed time (in days) since previous snapshot where delta[0] = 0
+        :type: typing.Sequence[int]
         :param labels: list/array indicating the (binary) label (e.g., pneumonia) for each snapshot
+        :type: typing.Sequence[int]
         :param snapshots: matrix indicating the observations in each snapshot such that each column indicates a snapshot
             and each row j indicates the j-th observation in that snapshot
+        :type: np.ndarray
         """
         self.deltas = deltas
         self.labels = labels
@@ -493,7 +496,7 @@ class Cohort(object):
                 # (1) not diagnosed in their first snapshot,
                 # (2) had at least two snapshots, and
                 # (3) were eventually diagnosed
-                if labels[0] == 0 and len(deltas) > 2 and labels[-1] == 1:
+                if labels[0] == 0 and len(deltas) >= 2 and labels[-1] == 1:
                     # We discard the delta and label from the first snapshot (since we can't predict the first snapshot)
                     # and discard the observations in the final snapshot (since that is when we are trying to predict).
                     # Unlike the AMIA paper, we shift our deltas (and labels) within the chronology datastructure
@@ -541,7 +544,9 @@ class Cohort(object):
         return self._patient_vocabulary.terms
 
     def chronologies(self):
-        """Returns a flattened list of all chronologies in this cohort"""
+        """Returns a flattened list of all chronologies in this cohort
+        :rtype: typing.List[preprocess.Chronology]
+        """
         return [chronology for patient in self._patient_chronologies for chronology in patient]
 
     def items(self):
@@ -562,13 +567,13 @@ class Cohort(object):
         balanced_chronologies = []
         for patient in self._patient_chronologies:
             # We interleave positive and negative examples
-            balanced_visits = np.empty(2 * len(patient), dtype=np.object)
-            # Even indicates are positive examples
-            balanced_visits[0::2] = patient
-            # Randomly truncate visits to end before the final snapshot to create negative examples
-            negative_examples = [chronology.truncate(-np.random.randint(1, len(chronology))) for chronology in patient]
-            # Odd indices are negative examples
-            balanced_visits[1::2] = negative_examples
+            balanced_visits = []
+            balanced_visits.extend(patient)
+            for chronology in patient:
+                if len(chronology) > 2:
+                    balanced_visits.append(chronology.truncate(-np.random.randint(1, len(chronology))))
+            balanced_visits = np.asarray(balanced_visits)
+            balanced_visits = np.random.permutation(balanced_visits)
             balanced_chronologies.append(balanced_visits)
         return Cohort(balanced_chronologies, self.vocabulary, self._patient_vocabulary)
 
