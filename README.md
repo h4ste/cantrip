@@ -35,7 +35,7 @@ export CHRONOLOGY_FILE=/path/to/chronology.tsv
 export VOCAB_FILE=/path/to/vocabulary.tsv
 export OUTPUT_DIR=/path/to/output/directory
 
-python run_cantrip.py \                                                                                                                                                                                                                                                                (bert)
+python run_cantrip.py \
       --chrono_file=$CHRONOLOGY_FILE  \
       --vocab_file=$VOCAB_FILE \
       --output_dir=$OUTPUT_DIR \
