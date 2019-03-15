@@ -114,10 +114,10 @@ flags.DEFINE_string('debug', default=None,
                          'specified.')
 
 flags.DEFINE_boolean('print_performance', default=False, help='Whether to print performance to the console.')
-flags.DEFINE_boolean('print_latex_results', default=False,
-                     help='Whether to print performance in a LaTeX-friendly table.')
-flags.DEFINE_boolean('print_tabbed_results', default=False,
-                     help='Whether to print performance in a tab-separated table.')
+flags.DEFINE_boolean('save_latex_results', default=False,
+                     help='Whether to save performance in a LaTeX-friendly table.')
+flags.DEFINE_boolean('save_tabbed_results', default=False,
+                     help='Whether to save performance in a tab-separated table.')
 
 flags.DEFINE_enum('optimizer', enum_values=['CANTRIP', 'BERT'], default='CANTRIP',
                   help='The type of optimizer to use when training CANTRIP.')
@@ -177,11 +177,27 @@ def run_model(model, raw_cohort, delta_encoder):
             snapshot_sizes.append(len(snapshot))
     print('Statistics on snapshot sizes:', scipy.stats.describe(snapshot_sizes))
 
+    days_til_onset = []
+    for chronology in raw_cohort.chronologies():
+        seconds = 0
+        for delta in chronology.deltas:
+            seconds += delta
+        days_til_onset.append(seconds / 60 / 60 / 24)
+    print('Statistics on days until disease onset:', scipy.stats.describe(days_til_onset))
+
+    elapsed_times = []
+    for chronology in raw_cohort.chronologies():
+        for delta in chronology.deltas:
+            elapsed_times.append(delta  / 60 / 60 / 24)
+    print('Statistics on elapsed time:', scipy.stats.describe(elapsed_times))
+
+    lengths = []
+    for chronology in raw_cohort.chronologies():
+        lengths.append(len(chronology))
+    print('Statistics on chronology lengths:', scipy.stats.describe(lengths))
 
     # Balance the cohort to have an even number of positive/negative chronologies for each patient
     cohort = raw_cohort.balance_chronologies()
-
-
 
     # Split into training:development:testing
     train, devel, test = make_train_devel_test_split(cohort.patients(), FLAGS.tdt_ratio)
@@ -198,7 +214,7 @@ def run_model(model, raw_cohort, delta_encoder):
     model_summaries_dir = os.path.join(FLAGS.output_dir, FLAGS.optimizer, FLAGS.rnn_cell_type,
                                        FLAGS.snapshot_encoder, model_file)
     model_checkpoint_dir = os.path.join(FLAGS.output_dir, FLAGS.optimizer, FLAGS.rnn_cell_type,
-                                        FLAGS.snapshot_encoder, model_file)
+                                        FLAGS.snapshot_encoder, model_file, 'cantrip_model')
 
     # Clear any previous summaries/checkpoints if asked
     if FLAGS.clear_prev:
@@ -352,14 +368,18 @@ def run_model(model, raw_cohort, delta_encoder):
             print('Devel: %s' % str(best_devel_metrics))
             print('Test: %s' % str(best_test_metrics))
 
-        if FLAGS.print_tabbed_results:
-            print_table_results(best_train_metrics, best_devel_metrics, best_test_metrics, 'simple')
+        if FLAGS.save_tabbed_results:
+            with open(os.path.join(model_summaries_dir, 'results.tsv'), 'w') as outfile:
+                print_table_results(best_train_metrics, best_devel_metrics, best_test_metrics, 'simple',
+                                    file=outfile)
 
-        if FLAGS.print_latex_results:
-            print_table_results(best_train_metrics, best_devel_metrics, best_test_metrics, 'latex_booktabs')
+        if FLAGS.save_latex_results:
+            with open(os.path.join(model_summaries_dir, 'results.tex'), 'w') as outfile:
+                print_table_results(best_train_metrics, best_devel_metrics, best_test_metrics, 'latex_booktabs',
+                                    file=outfile)
 
 
-def print_table_results(train, devel, test, tablefmt):
+def print_table_results(train, devel, test, tablefmt, file=sys.stdout):
     """Prints results in a table to the console
     :param train: training metrics
     :type train: dict,
@@ -401,8 +421,7 @@ def print_table_results(train, devel, test, tablefmt):
                       _evaluate(test, 'test')],
                      headers=['Data', 'Acc.', 'AUROC', 'AUPRC', 'P', 'R', 'F1', 'F2'],
                      tablefmt=tablefmt)
-
-    print(table)
+    print(table, file=file)
 
 
 def main(argv):
@@ -425,9 +444,9 @@ def main(argv):
     if FLAGS.snapshot_encoder == 'RNN':
         snapshot_encoder = encoding.rnn_encoder(FLAGS.snapshot_rnn_num_hidden)
     elif FLAGS.snapshot_encoder == 'CNN':
-        snapshot_encoder = encoding.cnn_encoder(FLAGS.snapshot_cnn_windows, FLAGS.snapshot_cnn_num_kernels,
+        snapshot_encoder = encoding.cnn_encoder(FLAGS.snapshot_cnn_windows, FLAGS.snapshot_cnn_kernels,
                                                 FLAGS.dropout)
-    elif FLAGS.snapshot_encoder == 'BAG':
+    elif FLAGS.snapshot_encoder == 'SPARSE':
         snapshot_encoder = encoding.bag_encoder
         observation_embedding_size = vocabulary_size
     elif FLAGS.snapshot_encoder == 'DENSE':
