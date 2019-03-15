@@ -29,7 +29,9 @@ def rnn_encoder(num_hidden, cell_fn=rnn_cell.RANCell):
         with tf.variable_scope('rnn_encoder'):
             # Embed clinical observations
             embedded_observations = layers.embedding_layer(model.observations, model.vocabulary_size,
-                                                           model.embedding_size)
+                                                           model.embedding_size,
+                                                           model.vocab_dropout,
+                                                           training=model.training)
 
             # Reshape to (batch * seq_len) x doc_len x embedding
             flattened_embedded_obs = tf.reshape(embedded_observations,
@@ -74,7 +76,9 @@ def cnn_encoder(windows=None, kernels=1000, dropout=0.):
         with tf.variable_scope('cnn_encoder'):
             # Embed observations
             embedded_observations = layers.embedding_layer(model.observations, model.vocabulary_size,
-                                                           model.embedding_size)
+                                                           model.embedding_size,
+                                                           model.vocab_dropout,
+                                                           training=model.training)
 
             # Reshape to (batch * seq_len) x snapshot_size x embedding
             flattened_embedded_obs = tf.reshape(embedded_observations,
@@ -158,7 +162,9 @@ def dense_encoder(model):
             bags = get_bag_vectors(model)
 
             # Embed bag-of-observation vectors
-            embedded_observations = layers.create_embeddings(model.vocabulary_size, model.embedding_size, model.dropout)
+            embedded_observations = layers.create_embeddings(model.vocabulary_size, model.embedding_size,
+                                                             model.vocab_dropout,
+                                                             training=model.training)
 
             # Reshape them so we use the same projection weights for every bag
             flat_emb_bags = tf.sparse_reshape(bags, [model.batch_size * model.max_seq_len,
@@ -175,9 +181,10 @@ def dense_encoder(model):
             # More dropout for fun
             flat_doc_embeddings = tf.nn.dropout(flat_doc_embeddings, 0.5)
 
-        # Reshape back to [batch_size x max_seq_len x encoding_size]
-        return tf.reshape(flat_doc_embeddings, [model.batch_size, model.max_seq_len, model.embedding_size],
-                          name='doc_embeddings')
+            # Reshape back to [batch_size x max_seq_len x encoding_size]
+
+    return tf.reshape(flat_doc_embeddings, [model.batch_size, model.max_seq_len, model.embedding_size],
+                      name='doc_embeddings')
 
 
 def bag_encoder(model):
@@ -213,7 +220,8 @@ def dan_encoder(obs_hidden_units, avg_hidden_units):
         """
         with tf.variable_scope('dan_encoder'):
             embedded_observations = layers.embedding_layer(model.observations, model.vocabulary_size,
-                                                           model.embedding_size)
+                                                           model.embedding_size, model.vocab_dropout,
+                                                           training=model.training)
 
             # Reshape to (batch * seq_len * doc_len) x embedding
             flattened_embedded_observations = tf.reshape(

@@ -63,8 +63,7 @@ class BERTOptimizer(object):
 
         learning_rate = tf.constant(value=init_lr, shape=[], dtype=tf.float32)
 
-        # Implements exponential decay of learning rate
-        # TODO: linear decay
+        # Implements linear decay of learning rate
         if lr_decay:
             learning_rate = polynomial_decay(
                 learning_rate,
