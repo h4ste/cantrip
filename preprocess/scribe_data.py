@@ -65,7 +65,7 @@ class TanhLogDeltaEncoder(DeltaEncoder):
         :return: tanh(log(elapsed days + 1))
         """
         elapsed_days = elapsed_seconds / 60 / 60 / 24
-        return np.tanh(np.log(elapsed_days + 1))
+        return [np.tanh(np.log(elapsed_days + 1))]
 
     @property
     def size(self):
@@ -337,6 +337,9 @@ class Chronology(object):
         """Returns the number of snapshots in this chronology"""
         return len(self.deltas)
 
+    def __str__(self):
+        return "Chronology(deltas=%s; snapshots=%s; labels=%s; length=%d)" % (self.deltas, self.labels, self.snapshots, len(self))
+
 
 class Cohort(object):
     """Data structure containing the chronologies and vocabulary associated with a cohort of patients.
@@ -535,9 +538,15 @@ class Cohort(object):
                           self.vocabulary,
                           self._patient_vocabulary)
         else:
-            return Cohort(self._patient_chronologies[self._patient_vocabulary.lookup_term_by_term_id(subject_id)],
-                          self.vocabulary,
-                          self._patient_vocabulary)
+            try:
+                return Cohort(self._patient_chronologies[self._patient_vocabulary.lookup_term_by_term_id(subject_id)],
+                              self.vocabulary,
+                              self._patient_vocabulary)
+            except IndexError as e:
+                msg = 'Failed to lookup cohort for subject id %d with name %s' % (
+                    subject_id, self._patient_vocabulary.lookup_term_by_term_id(subject_id))
+                print(msg)
+                raise IndexError(msg)
 
     def patients(self):
         """Return a list of external patient IDs indicating the members of this cohort"""
@@ -590,28 +599,37 @@ class Cohort(object):
         """
         if not delta_encoder:
             delta_encoder = TanhLogDeltaEncoder()
-        x = []
-        y = []
+
         # Shuffle chronologies for science
         chronologies = np.random.permutation(self.chronologies())
         vocabulary_size = len(self.vocabulary)
+
+        slices = []
+        num_examples = 0
         for chronology in chronologies:
             if final_only:
-                slices = [-np.random.randint(1, len(chronology))]
+                slice_ = [-1]
             else:
-                slices = range(len(chronology))
+                slice_ = range(len(chronology))
+            slices.append(slice_)
+            num_examples += len(slice_)
 
-            for i in slices:
+        from scipy import sparse
+        x = sparse.lil_matrix((num_examples, vocabulary_size + delta_encoder.size), dtype=np.int8)
+        # print("x=%s, num_examples=%d vocab_size=%d; delta_encoder_size=%d" % (x.shape, num_examples, vocabulary_size, delta_encoder.size))
+        y = np.zeros(num_examples, dtype=np.int8)
+        for r, (chronology, slice_) in enumerate(zip(chronologies, slices)):
+            for c in slice_:
                 # Convert sequence of observations into bag-of-observations vector
-                bow = np.zeros(shape=vocabulary_size, dtype=np.int32)
-                bow[chronology.docs[i]] = 1
+                x[r + c, chronology.snapshots[c]] = 1
 
                 # Deltas and labels are already time-shifted when the cohort is created, so we don't need to shift them
                 # here
-                deltas = np.asarray([delta_encoder.encode_delta(chronology.deltas[i])])
-                x.append(np.concatenate([deltas, bow], axis=0))
-                y.append(chronology.labels[i])
-        return np.asarray(x), np.asarray(y)
+                # print(chronology)
+                # print('i=%d; slices=%s' % (i, list(slices)))
+                x[r + c, vocabulary_size:] = delta_encoder.encode_delta(chronology.deltas[c])
+                y[r + c] = chronology.labels[c]
+        return x, y
 
     def make_epoch_batches(self, batch_size, max_snapshot_size, max_chrono_length, limit=None,
                            delta_encoder=None):
