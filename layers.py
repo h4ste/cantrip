@@ -11,9 +11,9 @@ def create_embeddings(vocab_size, embedding_size, dropout, training=False):
     return embeddings
 
 
-def embedding_layer(inputs, vocab_size, embedding_size, dropout=0):
+def embedding_layer(inputs, vocab_size, embedding_size, dropout, training):
     with tf.device('/cpu:0'):
-        embeddings = create_embeddings(vocab_size, embedding_size, dropout)
+        embeddings = create_embeddings(vocab_size, embedding_size, dropout, training)
         return tf.nn.embedding_lookup(embeddings, inputs)
 
 
