@@ -1,11 +1,12 @@
 import argparse
 
 import numpy as np
-from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score, roc_auc_score
 from sklearn import svm
+from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score, roc_auc_score, fbeta_score, \
+    average_precision_score
 
-from src.data import Cohort, encode_delta_discrete, encode_delta_continuous
-from run_cantrip import make_train_devel_test_split
+import preprocess
+import run_cantrip
 
 np.random.seed(1337)
 
@@ -18,7 +19,7 @@ parser.add_argument('--vocabulary-size', type=int, default=50000, metavar='V',
 parser.add_argument('--final-only', default=False, action='store_true',
                     help='only consider the final prediction in each chronology')
 parser.add_argument('--discrete-deltas', dest='delta_encoder', action='store_const',
-                    const=encode_delta_discrete, default=encode_delta_continuous,
+                    const=preprocess.DiscreteDeltaEncoder(), default=preprocess.TanhLogDeltaEncoder(),
                     help='rather than encoding deltas as tanh(log(delta)), '
                          'discretize them into buckets: > 1 day, > 2 days, > 1 week, etc.'
                          '(we don\'t have enough data for this be useful)')
@@ -36,35 +37,14 @@ def evaluate_classifier(x, y_true, clf):
     y_pred = clf.predict(x)
 
     return {
+        'Accuracy': accuracy_score(y_true, y_pred),
+        'AUROC': roc_auc_score(y_true, y_pred),
+        'AUPRC': average_precision_score(y_true, y_pred),
         'Precision': precision_score(y_true, y_pred),
         'Recall': recall_score(y_true, y_pred),
-        'Accuracy': accuracy_score(y_true, y_pred),
         'F1': f1_score(y_true, y_pred),
-        'AUROC': roc_auc_score(y_true, y_pred)
+        'F2': fbeta_score(y_true, y_pred, beta=2)
     }
-
-
-def print_model_evaluation(model, train, devel, test):
-    print('Training model...')
-    model.fit(*train)
-
-    def evaluate(x, y_true):
-        metrics = evaluate_classifier(x, y_true, model)
-        return [metrics['Accuracy'], metrics['Precision'], metrics['Recall'], metrics['F1'], metrics['AUROC']]
-
-    from tabulate import tabulate
-
-    table = tabulate([['train'] + evaluate(*train),
-                      ['devel'] + evaluate(*devel),
-                      ['test'] + evaluate(*test)],
-                     headers=['Acc.', 'P', 'R', 'F1', 'AUC'],
-                     tablefmt='latex_booktabs')
-
-    print(table)
-
-
-def leaky_rule(x, a=0.001):
-    return max(x, a)
 
 
 def run_model(model, args):
@@ -76,19 +56,26 @@ def run_model(model, args):
     """
 
     # Load cohort
-    cohort = Cohort.from_disk(args.chronology_path, args.vocabulary_path, args.vocabulary_size)
+    cohort = preprocess.Cohort.from_disk(args.chronology_path, args.vocabulary_path, args.vocabulary_size)
     # Balance training data
     cohort = cohort.balance_chronologies()
     # Create training:development:testing split
-    train, devel, test = make_train_devel_test_split(cohort.patients(), args.tdt_ratio)
+    train, devel, test = run_cantrip.make_train_devel_test_split(cohort.patients(), args.tdt_ratio)
 
     # Convert chronologies into single-step binary classification examples given
-    # O_i and delta_(i+1) predict pnemonia in O_(i+1)
-    train = cohort[train].make_simple_classification(**vars(args))
-    devel = cohort[devel].make_simple_classification(**vars(args))
-    test = cohort[test].make_simple_classification(**vars(args))
+    # O_i and delta_(i+1) predict pneumonia in O_(i+1)
+    train = cohort[train].make_simple_classification(delta_encoder=args.delta_encoder, final_only=args.final_only)
+    devel = cohort[devel].make_simple_classification(delta_encoder=args.delta_encoder, final_only=True)
+    test = cohort[test].make_simple_classification(delta_encoder=args.delta_encoder, final_only=True)
 
-    print_model_evaluation(model, train, devel, test)
+    model = model.fit(train[0], train[1])
+
+    train_eval = evaluate_classifier(train[0], train[1], model)
+    devel_eval = evaluate_classifier(devel[0], devel[1], model)
+    test_eval = evaluate_classifier(test[0], test[1], model)
+
+    # run_cantrip.print_table_results(train_eval, devel_eval, test_eval, tablefmt='simple')
+    run_cantrip.print_table_results(train_eval, devel_eval, test_eval, tablefmt='latex_booktabs')
 
 
 def main():
