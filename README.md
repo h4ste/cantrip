@@ -1,8 +1,6 @@
 # reCurrent Additive Network for Temporal RIsk Prediction (CANTRIP)
 A TensorFlow model for predicting temporal (disease) risk based on retrospective analysis of longitudinal clinical notes.
 
-Please check the [website](https://h4ste.github.io/cantrip) for details.
-
 # Dependencies
 - Python >= 3.6
 - TensorFlow >= 1.9
@@ -18,175 +16,147 @@ $ pip -r requirements.txt
 Then, install TensorFlow with or without gpu support:
 
 | CPU only | GPU Enabled |
-|---------:|-----------:|
+|:---------|:------------|
 | `$ pip install tensorflow>=1.9.0` | `$ pip install tensorflow-gpu>=1.9.0` |
 
 Optionally install any of the below optional dependencies:
 
 | Dependency | Purpose |
-|-----------:|--------:|
+|-----------:|:--------|
 | tqdm       | pretty console progress logging |
 | tabulate   | printing LaTeX style results tables |
 
 ---
 
-# Usage
-CANTRIP is evoked at the module level, with scripts for training and evaluating CANTRIP itself, or SVM/baseline models.
+### Training and Evaluating PRONTO
+ To train and evaluate PRONTO, you need to pass `pronto` a path to a chronology file and a vocabulary file.
+```bash
+export CHRONOLOGY_FILE=/path/to/chronology.tsv
+export VOCAB_FILE=/path/to/vocabulary.tsv
+export OUTPUT_DIR=/path/to/output/directory
 
-### Training and Evaluating CANTRIP
- To train and evaluate CANTRIP, you need to pass `cantrip` a path to a chronology file and a vocabulary file.
-```bash
-$ python -m src.scripts.cantrip [-h] --chronology-path CHRONOLOGY_PATH --vocabulary-path VOCABULARY_PATH 
-                  [--max-chron-len L] [--max-snapshot-size N]
-                  [--vocabulary-size V] [--discrete-deltas]
-                  [--dropout DROPOUT]
-                  [--observation-embedding-size OBSERVATION_EMBEDDING_SIZE]
-                  [--snapshot-embedding-size SNAPSHOT_EMBEDDING_SIZE]
-                  [--snapshot-encoder {RNN,CNN,BAG,DAN,DENSE}]
-                  [--snapshot-rnn-num-hidden SNAPSHOT_RNN_NUM_HIDDEN [SNAPSHOT_RNN_NUM_HIDDEN ...]]
-                  [--snapshot-rnn-cell-type {LSTM,LSTM-LN,GRU,GRU-LN,RAN,RAN-LN} [{LSTM,LSTM-LN,GRU,GRU-LN,RAN,RAN-LN} ...]]
-                  [--snapshot-cnn-windows [SNAPSHOT_CNN_WINDOWS]]
-                  [--snapshot-cnn-kernels SNAPSHOT_CNN_KERNELS]
-                  [--snapshot-dan-num-hidden-avg SNAPSHOT_DAN_NUM_HIDDEN_AVG [SNAPSHOT_DAN_NUM_HIDDEN_AVG ...]]
-                  [--snapshot-dan-num-hidden-obs SNAPSHOT_DAN_NUM_HIDDEN_OBS [SNAPSHOT_DAN_NUM_HIDDEN_OBS ...]]
-                  [--rnn-num-hidden RNN_NUM_HIDDEN [RNN_NUM_HIDDEN ...]]
-                  [--rnn-cell-type {SRAN,RAN,RAN-LN,LSTM,LSTM-LN,GRU,GRU-LN}]
-                  [--batch-size BATCH_SIZE] [--num-epochs NUM_EPOCHS]
-                  [--tdt-ratio TDT_RATIO] [--early-term]
-                  [--summary-dir SUMMARY_DIR]
-                  [--checkpoint-dir CHECKPOINT_DIR] [--clear] [--debug DEBUG]
-                  [--print-performance] [--print-latex-results]
-```
-with optional arguments:
-```bash
-  -h, --help            show this help message and exit
-  --chronology-path CHRONOLOGY_PATH
-                        path to cohort chronologies
-  --vocabulary-path VOCABULARY_PATH
-                        path to cohort vocabulary
-  --max-chron-len L     maximum number of snapshots per chronology
-  --max-snapshot-size N
-                        maximum number of observations to consider per
-                        snapshot
-  --vocabulary-size V   maximum vocabulary size, only the top V occurring
-                        terms will be used
-  --discrete-deltas     rather than encoding deltas as tanh(log(delta)),
-                        discretize them into buckets: > 1 day, > 2 days, > 1
-                        week, etc.
-  --dropout DROPOUT     dropout used for all dropout layers (including the
-                        vocabulary)
-  --observation-embedding-size OBSERVATION_EMBEDDING_SIZE
-                        dimensions of observation embedding vectors
-  --snapshot-embedding-size SNAPSHOT_EMBEDDING_SIZE
-                        dimensions of clinical snapshot encoding vectors
-  --snapshot-encoder {RNN,CNN,BAG,DAN,DENSE}
-                        type of clinical snapshot encoder to use
-  --rnn-num-hidden RNN_NUM_HIDDEN [RNN_NUM_HIDDEN ...]
-                        size of hidden layer(s) used for inferring the
-                        clinical picture; multiple arguments result in
-                        multiple hidden layers
-  --rnn-cell-type {SRAN,RAN,RAN-LN,LSTM,LSTM-LN,GRU,GRU-LN}
-                        type of RNN cell to use for inferring the clinical
-                        picture
-  --batch-size BATCH_SIZE
-                        batch size
-  --num-epochs NUM_EPOCHS
-                        number of training epochs
-  --tdt-ratio TDT_RATIO
-                        training:development:testing ratio
-  --early-term          stop when F1 on dev set decreases; this is pretty much
-                        always a bad idea
-  --summary-dir SUMMARY_DIR
-  --checkpoint-dir CHECKPOINT_DIR
-  --clear               remove previous summary/checkpoints before starting
-                        this run
-  --debug DEBUG         hostname:port of TensorBoard debug server
-  --print-performance
-  --print-latex-results
-```
-And optional snapshot encoder arguments:
-```bash
-Snapshot Encoder: RNN Flags:
-  --snapshot-rnn-num-hidden SNAPSHOT_RNN_NUM_HIDDEN [SNAPSHOT_RNN_NUM_HIDDEN ...]
-                        size of hidden layer(s) used for combining clinical
-                        obserations to produce the clinical snapshot encoding;
-                        multiple arguments result in multiple hidden layers
-  --snapshot-rnn-cell-type {LSTM,LSTM-LN,GRU,GRU-LN,RAN,RAN-LN} [{LSTM,LSTM-LN,GRU,GRU-LN,RAN,RAN-LN} ...]
-                        size of hidden layer(s) used for combining clinical
-                        observations to produce the clinical snapshot
-                        encoding; multiple arguments result in multiple hidden
-                        layers
+python run_cantrip.py \                                                                                                                                                                                                                                                                (bert)
+      --chrono_file=$CHRONOLOGY_FILE  \
+      --vocab_file=$VOCAB_FILE \
+      --output_dir=$OUTPUT_DIR \
+      --max_snapshot_size 256 \
+      --batch_size=32 \
+      --dropout=0.00 \
+      --vocab_dropout=0.50 \
+      --num_epochs 20 \
+      --print_performance
+  ```
 
-Snapshot Encoder: CNN Flags:
-  --snapshot-cnn-windows [SNAPSHOT_CNN_WINDOWS]
-                        length of convolution window(s) for CNN-based snapshot
-                        encoder; multiple arguments results in multiple
-                        convolution windows
-  --snapshot-cnn-kernels SNAPSHOT_CNN_KERNELS
-                        number of filters used in CNN
-  --snapshot-dan-num-hidden-avg SNAPSHOT_DAN_NUM_HIDDEN_AVG [SNAPSHOT_DAN_NUM_HIDDEN_AVG ...]
-                        number of hidden units to use when refining the DAN
-                        average layer; multiple arguments results in multiple
-                        dense layers
-  --snapshot-dan-num-hidden-obs SNAPSHOT_DAN_NUM_HIDDEN_OBS [SNAPSHOT_DAN_NUM_HIDDEN_OBS ...]
-                        number of hidden units to use when refining clinical
-                        observation embeddings; multiple arguments results in
-                        multiple dense layers
-```
+Required command-line arguments:
+
+| Flag | Description |
+|-----:|------------:|
+| --chrono_file | The chronology file for the cohort. |
+| --output_dir | The output directory where model checkpoints and summaries will be written. |
+| --vocab_file | The vocabulary file that chronologies were created with. |  |  |$ python run_pronto [-h] --chronology-path CHRONOLOGY_PATH --vocabulary-path VOCABULARY_PATH 
+  
+Additional command-line arguments:
+
+| Flag | Description | Default | Range |
+|:-----|:-----------|--------:|:-----|
+| --batch_size | The batch size. | 40 | a positive integer |
+| --tdt_ratio | The training:development:testing ratio. | 8:1:1 |  |
+| --dropout | Dropout used for all dropout layers (except vocabulary) | 0.7 | a non-negative number |
+| --vocab_dropout | Dropout used for vocabulary-level dropout (supersedes --dropout) | 0.7 | a non-negative number |
+| --learning_rate | The initial learning rate. | 0.0001 | number >= 1e-45 |
+| --max_chrono_length | The maximum number of snapshots per chronology. | 7 | a positive integer |
+| --max_snapshot_size | The maximum number of observations to consider per snapshot. | 200 | a positive integer |
+| --max_vocab_size | The maximum vocabulary size, only the top max_vocab_size most-frequent observations will be used to encode clinical snapshots. Any remaining observations will be ignored. | 50000 | a positive integer |
+| --num_epochs | The number of training epochs. | 30 | a positive integer |
+| --observation_embedding_size | The dimensions of observation embedding vectors. | 200 | a positive integer |
+| --rnn_num_hidden | The size of hidden layer(s) used for inferring the clinical picture; multiple arguments result in multiple hidden layers; repeat this option to specify a list of values | [100] | one or more positive integers |
+| --[no]snap_rnn_layer_norm | Enable layer normalization in the RNN used for snapshot encoding. | false |  |
+| --snapshot_cnn_kernels | The number of filters used in CNN | 1000 | a positive integer |
+| --snapshot_cnn_windows | The length of convolution window(s) for CNN-based snapshot encoder; multiple arguments results in multiple convolution windows; repeat this option to specify a list of values | [3, 4, 5] | one or more positive integers |
+| --snapshot_dan_num_hidden_avg | The number of hidden units to use when refining the DAN average layer; multiple arguments results in multiple dense layers; repeat this option to specify a list of values | [200, 200]  | one or more positive integers |    
+| --snapshot_dan_num_hidden_obs | The number of hidden units to use when refining clinical observation embeddings; multiple arguments results in multiple dense layers; repeat this option to specify a list of values | [200, 200]  | one or more positive integers |
+| --snapshot_embedding_size | The dimensions of clinical snapshot encoding vectors. | 200 | a positive integer |
+| --snapshot_encoder | The type of clinical snapshot encoder to use | DAN | RNN, CNN, SPARSE, DAN, DENSE |
+| --snapshot_rnn_cell_type | The type of RNN cell to use when encoding snapshots | RAN | LSTM, GRU, RAN |
+| --snapshot_rnn_num_hidden | The size of hidden layer(s) used for combining clinical observations to produce the clinical snapshot encoding; multiple arguments result in multiple hidden layers; repeat this option to specify a list of values | [200]  | one or more positive integers |
+
+Convenience options:
+
+| Flag | Description |
+|:-----|:-----------|
+| --[no]early_term | Stop when F2 on dev set decreases; this is pretty much always a bad idea. |
+| --debug: The hostname:port of TensorBoard debug server; debugging will be enabled if this flag is specified. |
+| --[no]clear_prev | Whether to remove previous summary/checkpoints before starting this run. |
+| --[no]print_performance | Whether to print performance to the console. |
+| --[no]save_latex_results | Whether to save performance in a LaTeX-friendly table. |
+| --[no]save_tabbed_results | Whether to save performance in a tab-separated table. |
+
+Super secret options:
+
+| Flag | Description | Default | Values |
+|:-----|:------------|--------:|:-------|
+| --optimizer | The type of optimizer to use when training PRONTO. | PRONTO | PRONTO, BERT | 
+| --rnn_cell_type | The type of RNN cell to use for inferring the clinical picture. | RAN | RAN, LRAN, GRU, LSTM |
+| --[no]rnn_layer_norm | Whether to use layer normalization in RNN used for inferring the clinical picture. | true | |
+| --[no]use_discrete_deltas | Rather than encoding deltas as tanh(log(delta)), they will be discretized into buckets: > 1 day, > 2 days, > 1 week, etc. | false | |
 
 ### Training and Evaluating Support Vector Machines
-Training and evaluating SVM baselines can be accomplished by:
+Training and evaluating SVMs can be accomplished by:
 ```bash
-$ python -m src.scripts.svm [-h] --chronology-path CHRONOLOGY_PATH --vocabulary-path VOCABULARY_PATH 
-              [--tdt-ratio TDT_RATIO] [--vocabulary-size V]
-              [--final-only] [--discrete-deltas] [--kernel KERNEL]
-```
-with optional arguments
-```bash
-  -h, --help            show this help message and exit
-  --chronology-path CHRONOLOGY_PATH
-                        path to cohort chronologies
-  --vocabulary-path VOCABULARY_PATH
-                        path to cohort vocabulary
-  --tdt-ratio TDT_RATIO
-                        training:development:testing ratio
-  --vocabulary-size V   maximum vocabulary size, only the top V occurring
-                        terms will be used
-  --final-only          only consider the final prediction in each chronology
-  --discrete-deltas     rather than encoding deltas as tanh(log(delta)),
-                        discretize them into buckets: > 1 day, > 2 days, > 1
-                        week, etc.
-  --kernel KERNEL       SVM kernel to evaluate
+$ python -m run_svm.py [-h] \
+    --chronology-path $CHRONOLOGY_FILE \
+    --vocabulary-path $VOCAB_FILE \
+    --final-only 
 ```
 
-### Training and Evaluating Misc. Baselines
-Training and evaluating miscellaneous SciKit: Learn baselines is done through:
+Required command-line arguments:
+
+| Flag | Description |
+|-----:|------------:|
+| --chronology-path | The chronology file for the cohort. |
+| --vocabulary-path | The vocabulary file that chronologies were created with. | 
+
+
+  
+Additional command-line arguments:
+
+| Flag | Description | Default | Range |
+|:-----|:------------|--------:|:------|
+| --tdt-ratio | The training:development:testing ratio. | 8:1:1 |  |
+| --vocabulary-size | The maximum vocabulary size, only the top max_vocab_size most-frequent observations will be used to encode clinical snapshots. Any remaining observations will be ignored. | 50000 | a positive integer |
+| --final_only | If set, will train using only the final snapshot in each chronology | False | |
+| --kernel | The type of kernel to evaluate | linear | linear, polynomial, rbf, sigmoid |
+| --[no]use_discrete_deltas | Rather than encoding deltas as tanh(log(delta)), they will be discretized into buckets: > 1 day, > 2 days, > 1 week, etc. | false | |
+
+### Training and Evaluating Support Vector Machines
+Training and evaluating baselines can be accomplished by:
 ```bash
-python -m src.scripts.baselines.py --chronology-path CHRONOLOGY_PATH --vocabulary-path VOCABULARY_PATH 
-                    [--tdt-ratio TDT_RATIO]
-                    [--vocabulary-size V] [--final-only] [--discrete-deltas]
+$ python -m run_baselines.py [-h] \
+    --chronology-path $CHRONOLOGY_FILE \
+    --vocabulary-path $VOCAB_FILE \
+    --final-only 
 ```
-with the following optional parameters:
-```
-  -h, --help            show this help message and exit
-  --chronology-path CHRONOLOGY_PATH
-                        path to cohort chronologies
-  --vocabulary-path VOCABULARY_PATH
-                        path to cohort vocabulary
-  --tdt-ratio TDT_RATIO
-                        training:development:testing ratio
-  --vocabulary-size V   maximum vocabulary size, only the top V occurring
-                        terms will be used
-  --final-only          only consider the final prediction in each chronology
-  --discrete-deltas     rather than encoding deltas as tanh(log(delta)),
-                        discretize them into buckets: > 1 day, > 2 days, > 1
-                        week, etc.
-```
+
+Required command-line arguments:
+
+| Flag | Description |
+|-----:|------------:|
+| --chronology-path | The chronology file for the cohort. |
+| --vocabulary-path | The vocabulary file that chronologies were created with. | 
+
+Additional command-line arguments:
+
+| Flag | Description | Default | Range |
+|:-----|:-----------|---------:|:------|
+| --tdt-ratio | The training:development:testing ratio. | 8:1:1 |  |
+| --vocabulary-size | The maximum vocabulary size, only the top max_vocab_size most-frequent observations will be used to encode clinical snapshots. Any remaining observations will be ignored. | 50000 | a positive integer |
+| --final_only | If set, will train using only the final snapshot in each chronology | False | |
+| --[no]use_discrete_deltas | Rather than encoding deltas as tanh(log(delta)), they will be discretized into buckets: > 1 day, > 2 days, > 1 week, etc. | false | |
 
 ---
 
 ## Data format
-The `cantrip` script load chronology and vocabulary files. Chronology and vocabulary files are assumed to follow specific formats.
+The `pronto` script load chronology and vocabulary files. Chronology and vocabulary files are assumed to follow specific formats.
 
 ### Chronology format
 The format of this chronology file is assumed to be as follows:
@@ -231,16 +201,3 @@ descending frequency before the cut-off is made)
 
 Note: as described in the AMIA paper , chronologies are truncated to terminate at the first positive label.
 Chronologies in which the first snapshot is positive or in which no snapshot is positive are discarded.
-
----
-
-# Python Documentation
-Documentation on CANTRIP is provided at [here](https://h4ste.github.io/cantrip). 
-[Sphinx](http://www.sphinx-doc.org/en/master/)-based Python documentation is available [here](https://h4ste.github.io/cantrip/sphinx/html/).
-
-## Structure
-- [src/data](src/data) Classes and utilities for loading clinical chronologies (and observation vocabularies from the disk); Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.data.html)
-- [src/models](src/models) TensorFlow implementation of CANTRIP; Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.models.html)
-    - [src/models/encoder](encoding.py) TensorFlow implementation of clinical snapshot encoders; Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.models.encoder.html)
-    - [src/models/rnn_cell](rnn_cell) TensorFlow implementation of [Recurrent Additive Networks (RANs)](https://arxiv.org/abs/1705.07393) and Batch-normalized Gated Recurrent Units; Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.models.rnn_cell.html)
-- [src/scripts](src/scripts) Executable scripts for running and evaluating CANTRIP as well as SVM and other baseline systems on pneumonia risk prediction; Python documentation is provided [here](https://h4ste.github.io/cantrip/sphinx/html/src.scripts.html)
