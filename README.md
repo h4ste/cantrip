@@ -28,8 +28,8 @@ Optionally install any of the below optional dependencies:
 
 ---
 
-### Training and Evaluating PRONTO
- To train and evaluate PRONTO, you need to pass `pronto` a path to a chronology file and a vocabulary file.
+### Training and Evaluating CANTRIP
+ To train and evaluate CANTRIP, you need to provide `CANTRIP` a path to a chronology file and a vocabulary file.
 ```bash
 export CHRONOLOGY_FILE=/path/to/chronology.tsv
 export VOCAB_FILE=/path/to/vocabulary.tsv
