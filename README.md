@@ -1,4 +1,7 @@
 # reCurrent Additive Network for Temporal RIsk Prediction (CANTRIP)
+
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/61ddfde32da04a17915daee18667bd0c)](https://app.codacy.com/app/h4ste/cantrip?utm_source=github.com&utm_medium=referral&utm_content=h4ste/cantrip&utm_campaign=Badge_Grade_Dashboard)
+
 A TensorFlow model for predicting temporal (disease) risk based on retrospective analysis of longitudinal clinical notes.
 
 # Dependencies
