@@ -1,9 +1,11 @@
 import re
 from typing import Union
 
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import math_ops, control_flow_ops
+# noinspection PyProtectedMember
+from tensorflow.python.ops.losses.losses_impl import _remove_squeezable_dimensions
 
 import modeling
 
@@ -41,8 +43,9 @@ class CANTRIPOptimizer(object):
 
 class BERTOptimizer(object):
 
-    def __init__(self, model, num_train_steps, num_warmup_steps=None, init_lr=1e-3,
-                 lr_decay=True, clip_norm=1.0):
+    def __init__(self, model, num_train_steps, steps_per_epoch, num_warmup_steps=None, init_lr=1e-3,
+                 lr_decay=True, l2_reg=False, l1_reg=True, clip_norm=1.0, weights=1,
+                 normalize_weights=False, focal_loss=False):
         """
         Creates a new CANTRIPOptimizer responsible for optimizing CANTRIP. Allegedly, some day I will get around to
         looking at other optimization strategies (e.g., sequence optimization).
@@ -69,9 +72,7 @@ class BERTOptimizer(object):
                 learning_rate,
                 self.global_step,
                 num_train_steps,
-                end_learning_rate=0.0,
-                power=1.0,
-                cycle=False
+                cycle=True  # False
             )
 
         # Implements linear warm up. I.e., if global_step < num_warmup_steps, the
@@ -90,22 +91,70 @@ class BERTOptimizer(object):
             learning_rate = (
                     (1.0 - is_warmup) * learning_rate + is_warmup * warmup_learning_rate)
 
-        optimizer = AdamWeightDecayOptimizer(
-            learning_rate=learning_rate,
-            weight_decay_rate=0.1,
-            beta_1=.9,
-            beta_2=0.999,
-            epsilon=1e-7,
-            exclude_from_weight_decay=["LayerNorm", "layer_norm", "bias"]
-        )
+        if weights != 1:
+            assert isinstance(weights, list)
+            self.class_weights = tf.constant(weights, dtype=tf.float32, shape=[len(weights), 1])
+            if normalize_weights:
+                self.class_weights = self.class_weights / tf.reduce_sum(self.class_weights)
+            weights = tf.nn.embedding_lookup(self.class_weights, model.labels)
 
-        self.loss = tf.losses.sparse_softmax_cross_entropy(model.labels, model.logits)
+        if focal_loss:
+            def sparse_focal_softmax_cross_entropy(labels, logits, weights=1., alpha=1, gamma=2.0,
+                                                   scope=None,
+                                                   loss_collection=tf.GraphKeys.LOSSES,
+                                                   reduction=tf.losses.Reduction.SUM_BY_NONZERO_WEIGHTS):
+                if labels is None:
+                    raise ValueError("labels must not be None.")
+                if logits is None:
+                    raise ValueError("logits must not be None.")
+                with tf.name_scope(scope, "focal_softmax_cross_entropy_loss", (logits, labels, weights)) as scope:
+                    # noinspection PyProtectedMember
+                    labels, logits, weights = _remove_squeezable_dimensions(
+                        labels, logits, weights, expected_rank_diff=1)
+                    losses = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels,
+                                                                            logits=logits,
+                                                                            name='xentropy')
+                    predictions = tf.nn.softmax(logits)
+                    predictions_pt = tf.squeeze(
+                        tf.gather(predictions,
+                                  tf.expand_dims(model.labels, axis=-1),
+                                  batch_dims=1)
+                    )
+                    # add small value to avoid 0
+                    print('Losses:', losses)
+                    print('Predictions:', predictions)
+                    print('Predictions Pt:', predictions_pt)
+                    print('Labels:', labels)
+                    print('(1 - Pt)^gamma:', tf.pow(1 - predictions_pt, gamma))
+                    print('Weights:', weights)
+                    focal_weights = tf.pow(1 - predictions_pt, gamma) * alpha * weights
+
+                    return tf.losses.compute_weighted_loss(
+                        losses, focal_weights, scope, loss_collection, reduction=reduction)
+
+            self.loss = sparse_focal_softmax_cross_entropy(model.labels, model.logits, weights=weights)
+        else:
+            self.loss = tf.losses.sparse_softmax_cross_entropy(model.labels, model.logits, weights=weights)
 
         tvars = tf.trainable_variables()
         grads = tf.gradients(self.loss, tvars)
 
         if clip_norm:
             (grads, _) = tf.clip_by_global_norm(grads, clip_norm=clip_norm)
+
+        optimizer = AdamWeightDecayOptimizer(
+            learning_rate=learning_rate,
+            l1_weight=.1 / steps_per_epoch if l1_reg else 0.0,
+            l2_weight=.1 / steps_per_epoch if l2_reg else 0.0,
+            weight_decay_rate=.1,
+            beta_1=.9,
+            beta_2=0.999,
+            epsilon=1e-8,
+            regularize=["snapshot_encoder"],
+            exclude_from_l1_reg=["LayerNorm", "layer_norm", "bias", "Bias"],
+            exclude_from_l2_reg=["LayerNorm", "layer_norm", "bias", "Bias"],
+            exclude_from_weight_decay=["LayerNorm", "layer_norm", "bias", "Bias"]
+        )
 
         train_op = optimizer.apply_gradients(zip(grads, tvars), global_step=self.global_step)
 
@@ -119,21 +168,31 @@ class AdamWeightDecayOptimizer(tf.train.Optimizer):
 
     def __init__(self,
                  learning_rate,
+                 l1_weight=0.0,
+                 l2_weight=0.0,
                  weight_decay_rate=0.0,
                  beta_1=0.9,
                  beta_2=0.999,
-                 epsilon=1e-6,
+                 epsilon=1e-8,
                  exclude_from_weight_decay=None,
-                 name="AdamWeightDecayOptimizer"):
+                 exclude_from_l1_reg=None,
+                 exclude_from_l2_reg=None,
+                 name="AdamWeightDecayOptimizer",
+                 regularize=None):
         """Constructs a AdamWeightDecayOptimizer."""
         super(AdamWeightDecayOptimizer, self).__init__(False, name)
 
         self.learning_rate = learning_rate
+        self.l1_param = l1_weight
+        self.l2_param = l2_weight
         self.weight_decay_rate = weight_decay_rate
         self.beta_1 = beta_1
         self.beta_2 = beta_2
         self.epsilon = epsilon
         self.exclude_from_weight_decay = exclude_from_weight_decay
+        self.exclude_from_l1_reg = exclude_from_l1_reg or exclude_from_weight_decay
+        self.exclude_from_l2_reg = exclude_from_l2_reg or exclude_from_weight_decay
+        self.regularize = regularize
 
     def apply_gradients(self, grads_and_vars, global_step=None, name=None):
         """See base class."""
@@ -143,6 +202,12 @@ class AdamWeightDecayOptimizer(tf.train.Optimizer):
                 continue
 
             param_name = self._get_variable_name(param.name)
+
+            if self._do_use_l2_reg(param_name):
+                grad += self.l2_param * param
+
+            if self._do_use_l1_reg(param_name):
+                grad += self.l1_param * tf.sign(param)
 
             m = tf.get_variable(
                 name=param_name + "/adam_m",
@@ -186,6 +251,36 @@ class AdamWeightDecayOptimizer(tf.train.Optimizer):
                  v.assign(next_v)])
         return tf.group(*assignments, name=name)
 
+    def _do_use_l2_reg(self, param_name):
+        """Whether to use L2 regularization for `param_name`."""
+        if not self.l2_param:
+            return False
+        if self.exclude_from_l2_reg:
+            for r in self.exclude_from_l2_reg:
+                if re.search(r, param_name) is not None:
+                    return False
+        if self.regularize:
+            for r in self.regularize:
+                if re.search(r, param_name) is not None:
+                    return True
+        else:
+            return True
+
+    def _do_use_l1_reg(self, param_name):
+        """Whether to use L2 weight decay for `param_name`."""
+        if not self.l1_param:
+            return False
+        if self.exclude_from_l1_reg:
+            for r in self.exclude_from_l1_reg:
+                if re.search(r, param_name) is not None:
+                    return False
+        if self.regularize:
+            for r in self.regularize:
+                if re.search(r, param_name) is not None:
+                    return True
+        else:
+            return True
+
     def _do_use_weight_decay(self, param_name):
         """Whether to use L2 weight decay for `param_name`."""
         if not self.weight_decay_rate:
@@ -194,7 +289,12 @@ class AdamWeightDecayOptimizer(tf.train.Optimizer):
             for r in self.exclude_from_weight_decay:
                 if re.search(r, param_name) is not None:
                     return False
-        return True
+        if self.regularize:
+            for r in self.regularize:
+                if re.search(r, param_name) is not None:
+                    return True
+        else:
+            return True
 
     # noinspection PyMethodMayBeStatic
     def _get_variable_name(self, param_name):
@@ -299,7 +399,7 @@ def polynomial_decay(learning_rate,
             # Make sure that the global_step used is not bigger than decay_steps.
             global_step_recomp = math_ops.minimum(global_step_recomp, decay_steps)
 
-        p = math_ops.div(global_step_recomp, decay_steps_recomp)
+        p = math_ops.divide(global_step_recomp, decay_steps_recomp)
         return math_ops.add(
             math_ops.multiply(learning_rate - end_learning_rate,
                               math_ops.pow(1 - p, power)),

@@ -1,4 +1,4 @@
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 
 from modeling import CANTRIPModel
 
@@ -22,6 +22,7 @@ class CANTRIPSummarizer(object):
         self.specificity = self.tn / (self.tn + self.fp)
         self.f1 = 2 * self.precision * self.recall / (self.precision + self.recall)
         self.f2 = 5 * self.precision * self.recall / (4 * self.precision + self.recall)
+        self.fhalf = 1.25 * self.precision * self.recall / (.25 * self.precision + self.recall)
 
         # Dict of all metrics to make fetching more convenient
         self.batch_metrics = {
@@ -35,20 +36,29 @@ class CANTRIPSummarizer(object):
             'Specificity': self.specificity,
             'F1': self.f1,
             'F2': self.f2,
-            'Loss': optimizer.loss
+            'F.5': self.fhalf,
         }
+
+        if self.optimizer:
+            self.batch_metrics['Loss'] = optimizer.loss
 
         # Group all batch-level metrics in the same pane in TensorBoard using a name scope
         with tf.name_scope('Batch'):
-            self.batch_summary = tf.summary.merge([
+
+            summaries = [
                 tf.summary.scalar('Accuracy', self.accuracy),
                 tf.summary.scalar('Precision', self.precision),
                 tf.summary.scalar('Recall', self.recall),
                 tf.summary.scalar('F1', self.f1),
                 tf.summary.scalar('F2', self.f2),
-                tf.summary.scalar('Specificity', self.specificity),
-                tf.summary.scalar('Loss', optimizer.loss)
-            ])
+                tf.summary.scalar('F.5', self.fhalf),
+                tf.summary.scalar('Specificity', self.specificity)
+            ]
+
+            if self.optimizer:
+                summaries.append(tf.summary.scalar('Loss', self.optimizer.loss))
+
+            self.batch_summary = tf.summary.merge([summaries])
 
         # Specific training/development/testing summarizers
         self.train = _CANTRIPModeSummarizer('train', model)
@@ -70,6 +80,7 @@ class _CANTRIPModeSummarizer(object):
             r, r_op = tf.metrics.recall(model.labels, model.y)
             f1 = 2 * p * r / (p + r)
             f2 = 5 * p * r / (4 * p + r)
+            fhalf = 1.25 * p * r / (.25 * p + r)
 
             # Streaming, epoch-level confusion matrix information
             with tf.name_scope('confusion_matrix'):
@@ -85,6 +96,10 @@ class _CANTRIPModeSummarizer(object):
                     tf.summary.scalar('FN', fn),
                 ])
 
+            specificity = tn / (tn + fp)
+            diagnostic_odds_ratio = (tp * tn) / (fp * fn)
+            mcc = ((tp * tn) - (fp * fn)) / tf.math.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+
             # Summary containing all epoch-level metrics computed for the current mode
             self.summary = tf.summary.merge([
                 tf.summary.scalar('Accuracy', acc),
@@ -92,8 +107,12 @@ class _CANTRIPModeSummarizer(object):
                 tf.summary.scalar('AUPRC', auprc),
                 tf.summary.scalar('Precision', p),
                 tf.summary.scalar('Recall', r),
+                tf.summary.scalar('Specificity', specificity),
+                tf.summary.scalar('DOR', diagnostic_odds_ratio),
                 tf.summary.scalar('F1', f1),
                 tf.summary.scalar('F2', f2),
+                tf.summary.scalar('F.5', fhalf),
+                tf.summary.scalar('MCC', mcc),
                 confusion_matrix
             ])
 
@@ -104,8 +123,16 @@ class _CANTRIPModeSummarizer(object):
                 'AUPRC': auprc,
                 'Precision': p,
                 'Recall': r,
+                'Specificity': specificity,
+                'DOR': diagnostic_odds_ratio,
                 'F1': f1,
                 'F2': f2,
+                'F.5': fhalf,
+                'MCC': mcc,
+                'TP': tp,
+                'FP': fp,
+                'FN': fn,
+                'TN': tn
             }
 
             # TensorFlow operations that need to be run to update the epoch-level metrics on each batch

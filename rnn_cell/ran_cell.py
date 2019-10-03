@@ -4,7 +4,7 @@ import numpy as np
 
 import tensorflow as tf
 from tensorflow.python.eager import context
-from tensorflow.python.framework import ops
+from tensorflow.python.framework import ops, tensor_shape
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import math_ops
@@ -76,7 +76,7 @@ def _linear(args,
             res = math_ops.matmul(array_ops.concat(args, 1), weights)
 
         if normalize:
-            res = tf.contrib.layers.layer_norm(res)
+            res = tf.keras.layers.LayerNormalization()(res)
 
         # remove the layer’s bias if there is one (because it would be redundant)
         if not bias or normalize:
@@ -136,6 +136,7 @@ class RANCell(RNNCell):
     """Recurrent Additive Networks (cf. https://arxiv.org/abs/1705.07393)
 
     This is an implementation of the standard RAN cell described in Equation group (1)."""
+
     def __init__(self, num_units, input_size=None, activation=math_ops.tanh, normalize=False, reuse=None):
         if input_size is not None:
             logging.warn("%s: The input_size parameter is deprecated.", self)
@@ -153,14 +154,16 @@ class RANCell(RNNCell):
         return self._num_units
 
     def __call__(self, inputs, state, scope=None):
-        with vs.variable_scope(scope or "ran_cell", reuse=self._reuse):
+        with vs.variable_scope(scope or "ran_cell", reuse=self._reuse) as scope:
             with vs.variable_scope("gates"):
                 c, h = state
-                gates = tf.nn.sigmoid(_linear([inputs, h], 2 * self._num_units, True, normalize=self._normalize))
+                gates = tf.nn.sigmoid(_linear([inputs, h], 2 * self._num_units, True, normalize=self._normalize,
+                                              kernel_regularizer=scope.regularizer))
                 i, f = array_ops.split(value=gates, num_or_size_splits=2, axis=1)
 
             with vs.variable_scope("content"):
-                content = _linear([inputs], self._num_units, True, normalize=self._normalize)
+                content = _linear([inputs], self._num_units, True, normalize=self._normalize,
+                                  kernel_regularizer=scope.regularizer)
 
             new_c = i * content + f * c
 
@@ -172,6 +175,74 @@ class RANCell(RNNCell):
             new_state = RANStateTuple(new_c, new_h)
             output = new_h
         return output, new_state
+
+
+# noinspection PyAbstractClass,PyMissingConstructor
+class VHRANCell(RNNCell):
+    """Variational Highway variant of a RAN CELL
+
+    This is an implementation of the standard RAN cell described in Equation group (1)."""
+
+    def __init__(self, num_units, input_size, keep_i=0.25, keep_h=.75, depth=8, activation=math_ops.tanh,
+                 normalize=False, reuse=None, forget_bias=None):
+        self.input_size = input_size
+        self._num_units = num_units
+        self.forget_bias = forget_bias
+
+        self._activation = activation
+        self._normalize = normalize
+        self._reuse = reuse
+
+        self._keep_i = keep_i
+        self._keep_h = keep_h
+        self._depth = depth
+
+    def zero_state(self, batch_size, dtype):
+        state = super().zero_state(batch_size, dtype)
+
+        assert type(batch_size) == list
+
+        input_shape = tensor_shape.as_shape(batch_size + [tensor_shape.as_dimension(self.input_size)])
+        if self._keep_i < 1.0:
+            noise_i = tf.random.uniform(shape=input_shape, dtype=tf.float32) / self._keep_i
+        else:
+            noise_i = tf.ones(shape=input_shape, dtype=tf.float32)
+
+        state_shape = tensor_shape.as_shape(batch_size + [tensor_shape.as_dimension(self._num_units)])
+        if self._keep_h < 1.0:
+            noise_h = tf.random.uniform(shape=state_shape, dtype=tf.float32) / self._keep_h
+        else:
+            noise_h = tf.ones(shape=state_shape, dtype=tf.float32)
+
+        return [state, noise_i, noise_h]
+
+    @property
+    def state_size(self):
+        return self._num_units
+
+    @property
+    def output_size(self):
+        return self._num_units
+
+    def __call__(self, inputs, state, scope=None):
+        current_state = state[0]
+        noise_i = state[1]
+        noise_h = state[2]
+        with vs.variable_scope(scope or "ran_cell", reuse=self._reuse) as scope:
+            for i in range(self._depth):
+                with tf.variable_scope('h_' + str(i)):
+                    if i == 0:
+                        h = _linear([inputs * noise_i], self._num_units, True, normalize=self._normalize)
+                with tf.variable_scope('t_' + str(i)):
+                    if i == 0:
+                        t = tf.sigmoid(_linear([inputs * noise_i, current_state * noise_h], self._num_units, True,
+                                               self.forget_bias, normalize=self._normalize))
+                    else:
+                        t = tf.sigmoid(_linear([current_state * noise_h], self._num_units, True, self.forget_bias,
+                                               normalize=self._normalize))
+                current_state = (h - current_state) * t + current_state
+
+            return current_state, [current_state, noise_i, noise_h]
 
 
 class InterpretableRANStateTuple(object):
@@ -223,6 +294,7 @@ class InterpretableSimpleRANCell(RNNCell):
     """Recurrent Additive Networks (cf. https://arxiv.org/abs/1705.07393).
 
     This is an implementation of the simplified RAN cell described in Equation group (2)."""
+
     def __init__(self, num_units, input_size=None, normalize=False, reuse=None):
         if input_size is not None:
             logging.warn("%s: The input_size parameter is deprecated.", self)

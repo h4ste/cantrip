@@ -6,7 +6,7 @@ clinical snapshot encoding ops to the graph returning the final clinical snapsho
 
 """
 
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 
 import layers
 import rnn_cell
@@ -90,21 +90,22 @@ def cnn_encoder(windows=None, kernels=1000, dropout=0.):
             outputs = []
             for n in windows:
                 if dropout > 0:
-                    flattened_embedded_obs = tf.layers.dropout(flattened_embedded_obs,
-                                                               rate=model.dropout, training=model.training)
-                conv_layer = tf.layers.conv1d(flattened_embedded_obs, kernels,
-                                              kernel_size=n,
-                                              activation=tf.nn.leaky_relu,
-                                              name="conv_%dgram" % n)
-                pool_layer = tf.layers.max_pooling1d(conv_layer, 1, model.max_snapshot_size - n + 1,
-                                                     name="maxpool_%dgram" % n)
+                    flattened_embedded_obs = \
+                        tf.keras.layers.Dropout(rate=model.dropout)(flattened_embedded_obs, training=model.training)
+                conv_layer = tf.keras.layers.Convolution1D(filters=kernels,
+                                                           kernel_size=n,
+                                                           activation=tf.nn.leaky_relu,
+                                                           name="conv_%dgram" % n)(flattened_embedded_obs)
+                pool_layer = tf.keras.layers.MaxPooling1D(pool_size=1,
+                                                          strides=model.max_snapshot_size - n + 1,
+                                                          name="maxpool_%dgram" % n)(conv_layer)
                 outputs.append(pool_layer)
 
             # Concatenate pooled outputs
             output = tf.concat(outputs, axis=-1)
 
             # Embed concat output with leaky ReLU
-            embeddings = tf.layers.dense(output, model.embedding_size, activation=tf.nn.relu)
+            embeddings = tf.keras.layers.Dense(units=model.embedding_size, activation=tf.nn.relu)(output)
 
             # Reshape back to [batch_size x max_seq_len x encoding_size]
             return tf.reshape(embeddings, [model.batch_size, model.max_seq_len, model.embedding_size])
@@ -127,7 +128,7 @@ def get_bag_vectors(model):
     # 2. Get the vocabulary indices for non-zero observations
     vocab_indices = tf.boolean_mask(model.observations, mask)
     vocab_indices = tf.expand_dims(vocab_indices[:], axis=-1)
-    vocab_indices = tf.to_int64(vocab_indices)
+    vocab_indices = tf.cast(vocab_indices, dtype=tf.int64)
 
     # 3. Get batch and sequence indices for non-zero observations
     tensor_indices = where[:, :-1]
@@ -144,7 +145,7 @@ def get_bag_vectors(model):
 
     # Store as a sparse tensor because they're neat
     st = tf.SparseTensor(indices=indices, values=ones, dense_shape=dense_shape)
-    return tf.sparse_reorder(st)
+    return tf.sparse.reorder(st)
 
 
 def dense_encoder(model):
@@ -167,19 +168,20 @@ def dense_encoder(model):
                                                              training=model.training)
 
             # Reshape them so we use the same projection weights for every bag
-            flat_emb_bags = tf.sparse_reshape(bags, [model.batch_size * model.max_seq_len,
+            flat_emb_bags = tf.sparse.reshape(bags, [model.batch_size * model.max_seq_len,
                                                      model.vocabulary_size],
                                               name='flat_emb_obs')
             # Dropout for fun
-            if model.dropout > 0:
-                flat_emb_bags = tf.layers.dropout(flat_emb_bags, rate=model.dropout, training=model.training)
+            # if model.dropout > 0:
+            #     flat_emb_bags = tf.layers.dropout(flat_emb_bags, rate=model.dropout, training=model.training)
 
             # Sparse to dense projection
             flat_doc_embeddings = tf.sparse_tensor_dense_matmul(flat_emb_bags, embedded_observations,
                                                                 name='flat_doc_embeddings')
 
             # More dropout for fun
-            flat_doc_embeddings = tf.nn.dropout(flat_doc_embeddings, 0.5)
+            flat_doc_embeddings = tf.keras.layers.Dropout(rate=model.dropout)(flat_doc_embeddings,
+                                                                              training=model.training)
 
             # Reshape back to [batch_size x max_seq_len x encoding_size]
 
@@ -198,22 +200,79 @@ def bag_encoder(model):
     with tf.variable_scope('bow_encoder'):
         # Use the CPU cause everything will be vocabulary-length
         with tf.device("/cpu:0"):
-            return tf.sparse_tensor_to_dense(get_bag_vectors(model))
+            return tf.sparse.to_dense(get_bag_vectors(model))
 
 
-def dan_encoder(obs_hidden_units, avg_hidden_units):
+class SparseDenseLayer(tf.keras.layers.Dense):
+
+    def __init__(self,
+                 units,
+                 activation=None,
+                 use_bias=True,
+                 kernel_initializer='glorot_uniform',
+                 bias_initializer='zeros',
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None,
+                 kernel_constraint=None,
+                 bias_constraint=None,
+                 **kwargs):
+        super(SparseDenseLayer, self).__init__(units=units,
+                                               activation=activation,
+                                               use_bias=use_bias,
+                                               kernel_initializer=kernel_initializer,
+                                               bias_initializer=bias_initializer,
+                                               kernel_regularizer=kernel_regularizer,
+                                               bias_regularizer=bias_regularizer,
+                                               activity_regularizer=activity_regularizer,
+                                               kernel_constraint=kernel_constraint,
+                                               bias_constraint=bias_constraint,
+                                               **kwargs)
+
+    def call(self, inputs):
+        if not isinstance(inputs, tf.SparseTensor):
+            return super(SparseDenseLayer, self).call(inputs)
+
+        outputs = tf.sparse.sparse_dense_matmul(inputs, self.kernel)
+        outputs = tf.debugging.check_numerics(outputs, "SparseDenseLayer had NaN product")
+
+        if self.use_bias:
+            outputs = tf.nn.bias_add(outputs, self.bias)
+            outputs = tf.debugging.check_numerics(outputs, "SparseDenseLayer had NaN bias sum")
+
+        if self.activation is not None:
+            outputs = self.activation(outputs)
+            outputs = tf.debugging.check_numerics(outputs, "SparseDenseLayer had NaN activation")
+
+        outputs = tf.debugging.check_numerics(outputs, "SparseDenseLayer output had NaNs")
+        return outputs
+
+
+def dan_encoder(obs_hidden_units, avg_hidden_units, activation='gelu'):
     """Represents snapshots as a modified element-wise averages of embedded clinical observations.
 
     :param obs_hidden_units: number of hidden units in dense layers between observation embeddings and average;
         if iterable multiple dense layers will be added using the respective hidden units
     :param avg_hidden_units: number of hidden units in dense layers between average embeddings and snapshot encoding;
         if iterable multiple dense layers will be added using the respective hidden units
+    :param activation: type of activation function to use between layers
     :return: clinical snapshot encoding
     """
 
+    activation_fn = None
+    if activation == 'gelu':
+        activation_fn = layers.gelu
+    elif activation == 'relu':
+        activation_fn = tf.nn.relu
+    elif activation == 'tanh':
+        activation_fn = tf.nn.tanh
+    elif activation == 'sigmoid':
+        activation_fn = tf.nn.sigmoid
+    else:
+        raise KeyError('Unsupported activation function: %s' % activation)
+
     def _dan_encoder(model):
         """
-
         :param model:
         :type model: modeling.CANTRIPModel
         :return:
@@ -230,32 +289,115 @@ def dan_encoder(obs_hidden_units, avg_hidden_units):
                  model.embedding_size]
             )
             # Add dense observation layers
-            # TODO: switch back to ReLU as described in the paper
             obs_layer = flattened_embedded_observations
             for num_hidden in obs_hidden_units:
-                obs_layer = tf.layers.dense(obs_layer, num_hidden, tf.nn.tanh)
+                obs_layer = tf.keras.layers.Dense(units=num_hidden, activation=activation_fn)(obs_layer)
 
             # Reshape final output by grouping observations in the same snapshot together
             obs_layer = tf.reshape(obs_layer, [model.batch_size * model.max_seq_len,
                                                model.max_snapshot_size,
-                                               obs_layer.shape[-1]])
+                                               obs_hidden_units[-1]])
 
             # Divide by active number of observations rather than the padded snapshot size; requires reshaping to
             # (batch x seq_len) x 1 so we can divide by this
             flattened_snapshot_sizes = tf.reshape(model.snapshot_sizes, [model.batch_size * model.max_seq_len, 1])
 
+            mask = tf.sequence_mask(model.snapshot_sizes, maxlen=model.max_snapshot_size, dtype=tf.float32)
+            mask = tf.reshape(mask, [model.batch_size * model.max_seq_len, model.max_snapshot_size, 1])
+
             # Compute dynamic-size element-wise average
-            avg_layer = tf.reduce_mean(obs_layer, axis=1) / tf.to_float(tf.maximum(flattened_snapshot_sizes, 1))
+            avg_layer = tf.reduce_sum(obs_layer * mask, axis=1)
+            avg_layer = avg_layer / tf.cast(tf.maximum(flattened_snapshot_sizes, 1), dtype=tf.float32)
 
             # More fun dense layers
-            # TODO: switch back to ReLU as described in the paper
             for num_hidden in avg_hidden_units:
-                avg_layer = tf.layers.dense(avg_layer, num_hidden, tf.nn.tanh)
+                avg_layer = tf.keras.layers.Dense(num_hidden, activation_fn)(avg_layer)
 
             # Final output of the model
-            output = tf.layers.dense(avg_layer, model.embedding_size, tf.nn.tanh)
+            output = tf.keras.layers.Dense(model.embedding_size, activation_fn)(avg_layer)
 
             # Reshape to [batch_size x seq_len x encoding_size]
             return tf.reshape(output, [model.batch_size, model.max_seq_len, model.embedding_size])
 
     return _dan_encoder
+
+
+def rmlp_encoder(activation='gelu', num_layers=10, num_hidden=2048):
+    activation_fn = None
+    if activation == 'gelu':
+        activation_fn = layers.gelu
+    elif activation == 'relu':
+        activation_fn = tf.nn.relu
+    elif activation == 'tanh':
+        activation_fn = tf.nn.tanh
+    elif activation == 'sigmoid':
+        activation_fn = tf.nn.sigmoid
+    else:
+        raise KeyError('Unsupported activation function: %s' % activation)
+
+    def residual_unit(inputs, i, units):
+        with tf.variable_scope("residual_unit%d" % i):
+            x = tf.keras.layers.Dense(units=units, activation=activation_fn)(inputs)
+            x = tf.keras.layers.BatchNormalization()(x)
+            x = activation_fn(x)
+            return x + inputs
+
+    def _rmlp_encoder(model):
+        # Convert batch x seq_len x doc_len tensor of obs IDs to batch x seq_len x vocab_size bag-of-observation vectors
+        with tf.variable_scope("RMLP"):
+            bags = get_bag_vectors(model)
+            flat_bags = tf.sparse.reshape(bags, [model.batch_size * model.max_seq_len, model.vocabulary_size])
+            x = SparseDenseLayer(units=num_hidden, activation=None)(flat_bags)
+
+            # Convert to Dense to debug NaNs
+            # flat_bags = tf.sparse.to_dense(flat_bags)
+            # flat_bags = tf.debugging.assert_all_finite(flat_bags, 'flat bags had nans')
+            # x = tf.keras.layers.Dense(units=num_hidden, activation=None)(flat_bags)
+
+            for i in range(num_layers):
+                x = residual_unit(x, i, num_hidden)
+
+            x = tf.keras.layers.Dense(units=model.embedding_size, activation=activation_fn)(x)
+            x = tf.debugging.assert_all_finite(x, 'dense had nans')
+            x = tf.reshape(x, [model.batch_size, model.max_seq_len, model.embedding_size])
+            x = tf.debugging.assert_all_finite(x, 'reshape had nans')
+        return x
+
+    return _rmlp_encoder
+
+
+def vhn_encoder(activation='gelu', noise_weight=0.75, num_layers=10, depth=6, num_hidden=2048):
+    activation_fn = None
+    if activation == 'gelu':
+        activation_fn = layers.gelu
+    elif activation == 'relu':
+        activation_fn = tf.nn.relu
+    elif activation == 'tanh':
+        activation_fn = tf.nn.tanh
+    elif activation == 'sigmoid':
+        activation_fn = tf.nn.sigmoid
+    else:
+        raise KeyError('Unsupported activation function: %s' % activation)
+
+    def vhn_layer(inputs, units, residuals):
+        noise = tf.random.uniform(shape=inputs.shape, dtype=tf.float32) / noise_weight
+        out = tf.keras.layers.Dense(units=units, activation=activation_fn)(inputs + noise)
+        return tf.math.add_n([out, inputs] + residuals)
+
+    def _vhn_encoder(model):
+        # Convert batch x seq_len x doc_len tensor of obs IDs to batch x seq_len x vocab_size bag-of-observation vectors
+        bags = get_bag_vectors(model)
+        flat_bags = tf.sparse.reshape(bags, [model.batch_size * model.max_seq_len, model.vocabulary_size])
+        x = SparseDenseLayer(units=num_hidden, activation=None)(flat_bags)
+
+        residuals = []
+        for i in range(num_layers):
+            slice_ = min(i + 1, depth)
+            x = vhn_layer(x, units=num_hidden, residuals=residuals[-slice_:])
+            residuals.append(x)
+
+        x = tf.keras.layers.Dense(units=model.embedding_size, activation=activation_fn)(x)
+        x = tf.reshape(x, [model.batch_size, model.max_seq_len, model.embedding_size])
+        return x
+
+    return _vhn_encoder

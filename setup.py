@@ -4,7 +4,7 @@ from setuptools import find_packages
 
 setup(
     name='CANTRIP',
-    version='2.0.1',
+    version='1.0.0',
     author='Travis R. Goodwin',
     author_email='travis.goodwin@nih.gov',
     description='TensorFlow implementation of reCurrent Additive Network for Temporal RIsk Prediction',
@@ -17,15 +17,13 @@ setup(
     extras_require={
         'tqdm': ['tqdm'],
         'tabulate': ['tabulate'],
-        'tf': ['tensorflow>=1.9.0'],
-        'tf_gpu': ['tensorflow-gpu>=1.9.0']
+        'tf': ['tensorflow>=1.14.0'],
+        'tf_gpu': ['tensorflow-gpu>=1.14.0']
     },
     packages=find_packages(),
     entry_points={
         'console_scripts': [
-            'src = src.scripts.src',
-            'baselines = src.scripts.baselines',
-            'svm = src.scripts.svm',
+            'run_experiments.py',
         ]
     }
 )
