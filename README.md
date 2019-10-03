@@ -32,12 +32,17 @@ Optionally install any of the below optional dependencies:
 
 ## Usage
 ```bash
-       USAGE: run_experiment.py --data_dir $DATA_DIR --output_dir $OUTPUT_DIR [flags]
+$ run_experiment.py --data_dir $DATA_DIR --output_dir $OUTPUT_DIR [flags]
+```
 
-required flags:
+### Required flags:
+```
   --data_dir: Location of folder containing features, labels, & start times for training, development, and testing cohorts
   --output_dir: The output directory where model checkpoints and summaries will be written.
-optional flags:
+```
+
+### Optional flags:
+```
   --augment_negatives: Augment negative examples by randomly truncating the given percent of positive examples to end early
     (default: '0.0')
     (a number in the range [0.0, 1.0])
@@ -229,7 +234,7 @@ python run_experiment.py \
 ### Training and Evaluating Shallow Baselines
 Training and evaluating SVMs can be accomplished by:
 ```bash
-$ python run_experiment.py \                                                                                                                                                                                                                                                          (cantrip)
+$ python run_experiment.py \
          --data_dir=$DATA_DIR \
          --output_dir=$OUTPUT_DIR \
          --do_train \
@@ -249,7 +254,7 @@ $ python run_experiment.py \                                                    
 
 Likewise to train and evaluate the logistic regression baseline:
 ```bash
-$ python run_experiment.py \                                                                                                                                                                                                                                                          (cantrip)
+$ python run_experiment.py \
          --data_dir=$DATA_DIR \
          --output_dir=$OUTPUT_DIR \
          --do_train \
@@ -270,7 +275,7 @@ $ python run_experiment.py \                                                    
 ## Training and Evaluating bi-LSTM
 Training and evaluating the bi-LSTM baseline is accomplished by:
 ```bash
-$ python run_experiment.py \                                                                                                                                                                                                                                                          (cantrip)
+$ python run_experiment.py \
          --data_dir=$DATA_DIR \
          --output_dir=$OUTPUT_DIR \
          --do_train \
@@ -309,18 +314,22 @@ The `run_experiment.py` script assumes the data directory contains the following
 ### Chronology CSV format
 The chronology CSV files is assumed to have and follow the header:
 
-    [subject_id],[hadm_id],[timestamp],[observations]
+       [subject_id],[hadm_id],[timestamp],[observations]
 
 where ``[observations]`` is encoded as a space separated list of observation IDs (e.g., UMLS CUIs)
 
 ### Admission CSV format:
 The admission CSV files are assumed to have and follow the header:
-    [subject_id],[hadm_id],[timestamp]
+    
+       [subject_id],[hadm_id],[timestamp]
+       
 where ``[timestamp]`` is the admission time for the associated hospital admission
 
 ### Label CSV format:
 The label CSV files are assumed to have and follow the header:
+    
     [subject_id],[hadm_id],[timestamp],[label]
+    
 where ``[timestamp]`` is the timestamp of the label and ``[label]`` is a zero or one indicating the date-of-event for the disease
 
 
