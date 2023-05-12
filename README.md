@@ -1,5 +1,9 @@
 # reCurrent Additive Network for Temporal RIsk Prediction (CANTRIP)
-A TensorFlow model for predicting temporal (disease) risk based on retrospective analysis of longitudinal clinical notes.
+A TensorFlow model for predicting temporal (disease) risk based on retrospective analysis of longitudinal clinical notes as in
+
+> Travis R Goodwin, Dina Demner-Fushman, A customizable deep learning model for nosocomial risk prediction from critical care notes with indirect supervision, Journal of the American Medical Informatics Association, Volume 27, Issue 4, April 2020, Pages 567–576, https://doi.org/10.1093/jamia/ocaa004
+
+![CANTRIP model architecture](https://www.ncbi.nlm.nih.gov/pmc/articles/instance/7075529/bin/ocaa004f4.jpg)
 
 # Dependencies
 - python >= 3.6
